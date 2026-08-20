@@ -28,10 +28,10 @@ afterEach(async () => {
 })
 
 /** Write a cordis.yml with webserver + bridge rows, then boot through the real Loader. */
-async function loadComposition(port = 0): Promise<Context> {
+async function loadComposition(port = 0, withLocalRoot = false): Promise<Context> {
   root = await mkdtemp(join(tmpdir(), 'dsh-rdagent-bridge-loader-'))
   const configPath = join(root, 'cordis.yml')
-  await writeFile(configPath, [
+  const rows = [
     "- name: '@deepseek-ai/dsh-host-webserver'",
     '  config:',
     "    host: '127.0.0.1'",
@@ -42,8 +42,10 @@ async function loadComposition(port = 0): Promise<Context> {
     `    logDir: ${join(root, 'logs')}`,
     `    pythonBin: ${process.execPath}`,
     `    parseScript: ${join(root, 'stub.cjs')}`,
-    '',
-  ].join('\n'))
+  ]
+  if (withLocalRoot) rows.push(`    experimentRoot: ${join(root, 'experiments')}`)
+  rows.push('')
+  await writeFile(configPath, rows.join('\n'))
 
   context = new Context()
   context.baseUrl = pathToFileURL(root).href + '/'
@@ -152,5 +154,126 @@ describe('rdagent-bridge routes', () => {
       body: '',
     })
     expect(post.status).toBe(405)
+  })
+
+  it('resolves two-segment trace ids (experiment/timestamp)', async () => {
+    const ctx = await loadComposition()
+    await mkdir(join(root!, 'logs', 'expA', '2026-08-20_10-00-00-000000'), { recursive: true })
+    await writeFile(join(root!, 'logs', 'expA', '2026-08-20_10-00-00-000000', 'x.pkl'), 'x')
+    await writeFile(
+      join(root!, 'stub.cjs'),
+      'console.log(JSON.stringify({ trace: process.argv[3] ?? "?", count: 0, messages: [] }))\n',
+    )
+
+    const res = await request(ctx.webServer.port, '/rdagent/trace?id=expA%2F2026-08-20_10-00-00-000000&limit=5')
+    expect(res.status).toBe(200)
+    const body = JSON.parse(res.body) as { trace: string }
+    expect(body.trace).toBe('expA/2026-08-20_10-00-00-000000')
+  })
+
+  it('rejects three-segment trace ids', async () => {
+    const ctx = await loadComposition()
+    await mkdir(join(root!, 'logs', 'a', 'b', 'c'), { recursive: true })
+    const res = await request(ctx.webServer.port, '/rdagent/trace?id=a%2Fb%2Fc')
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('local experiments', () => {
+  it('groups rdagent traces by experiment and serves the local tree', async () => {
+    const ctx = await loadComposition(0, true)
+    // nested rdagent experiment + flat trace
+    await mkdir(join(root!, 'logs', 'expA', 'ts1'), { recursive: true })
+    await writeFile(join(root!, 'logs', 'expA', 'ts1', 'x.pkl'), 'x')
+    await mkdir(join(root!, 'logs', 'ts2'), { recursive: true })
+    await writeFile(join(root!, 'logs', 'ts2', 'x.pkl'), 'x')
+    // local exp1s-style (JSONL manifest + runs) and exp2-style (standard JSON)
+    await mkdir(join(root!, 'experiments', 'exp1s', 'runs', 'F5c_s2023'), { recursive: true })
+    await writeFile(
+      join(root!, 'experiments', 'exp1s', 'manifest.json'),
+      `${JSON.stringify({ generated: '2026-08-19T00:31+08:00', design: 'v2', runs: [] })}\n` +
+        `${JSON.stringify({ run_id: 'F5c_s2023', tag: 'F5c', secs: 3258, moved: true })}\n`,
+    )
+    await mkdir(join(root!, 'experiments', 'exp2', 'metrics'), { recursive: true })
+    await writeFile(
+      join(root!, 'experiments', 'exp2', 'manifest.json'),
+      JSON.stringify({ generated: '2026-08-18T23:25+08:00', design: 'v2', hashes: { price_csv: {} } }),
+    )
+
+    const res = await request(ctx.webServer.port, '/experiments')
+    expect(res.status).toBe(200)
+    const body = JSON.parse(res.body) as {
+      experiments: { name: string; source: string; runs: { id: string }[] }[]
+    }
+    const names = body.experiments.map(e => `${e.source}:${e.name}`)
+    expect(names).toContain('rdagent:expA')
+    expect(names).toContain('rdagent:未分组')
+    expect(names).toContain('local:exp1s')
+    expect(names).toContain('local:exp2')
+    const expA = body.experiments.find(e => e.name === 'expA')!
+    expect(expA.runs.map(r => r.id)).toEqual(['ts1'])
+    const exp1s = body.experiments.find(e => e.name === 'exp1s')!
+    expect(exp1s.runs[0]?.id).toBe('F5c_s2023')
+    const exp2 = body.experiments.find(e => e.name === 'exp2')!
+    expect(exp2.runs).toEqual([])
+  })
+
+  it('extracts columnar series and decodes UTF-16LE logs for a local experiment', async () => {
+    const ctx = await loadComposition(0, true)
+    await mkdir(join(root!, 'experiments', 'exp2', 'metrics'), { recursive: true })
+    await writeFile(
+      join(root!, 'experiments', 'exp2', 'manifest.json'),
+      JSON.stringify({ generated: 't', design: 'd', hashes: {} }),
+    )
+    await writeFile(
+      join(root!, 'experiments', 'exp2', 'metrics', 'daily_series.json'),
+      JSON.stringify({
+        series: { date: ['2025-01-02', '2025-01-03'], band_topk: [0.01, -0.02], band_width_K: [20, 20] },
+      }),
+    )
+    // UTF-16LE log with BOM
+    const log = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('login success!', 'utf16le')])
+    await mkdir(join(root!, 'experiments', 'exp2', 'run_logs'), { recursive: true })
+    await writeFile(join(root!, 'experiments', 'exp2', 'run_logs', 'fetch.log'), log)
+
+    const res = await request(ctx.webServer.port, '/experiments/run?exp=exp2')
+    expect(res.status).toBe(200)
+    const body = JSON.parse(res.body) as {
+      series: { label: string; dates: string[]; values: number[] }[]
+      reports: { label: string; text: string }[]
+    }
+    const band = body.series.find(s => s.label === 'band_topk')
+    expect(band?.dates).toEqual(['2025-01-02', '2025-01-03'])
+    expect(band?.values).toEqual([0.01, -0.02])
+    const report = body.reports.find(r => r.label.includes('fetch.log'))
+    expect(report?.text).toContain('login success!')
+  })
+
+  it('tolerates a broken manifest row with warnings instead of 500', async () => {
+    const ctx = await loadComposition(0, true)
+    await mkdir(join(root!, 'experiments', 'exp1s'), { recursive: true })
+    await writeFile(
+      join(root!, 'experiments', 'exp1s', 'manifest.json'),
+      `${JSON.stringify({ generated: 't' })}\n{bad json line\n`,
+    )
+
+    const res = await request(ctx.webServer.port, '/experiments/run?exp=exp1s')
+    expect(res.status).toBe(200)
+    const body = JSON.parse(res.body) as { warnings: string[] }
+    expect(body.warnings.length).toBeGreaterThan(0)
+  })
+
+  it('serves artifact text and rejects paths escaping the experiment root', async () => {
+    const ctx = await loadComposition(0, true)
+    await mkdir(join(root!, 'experiments', 'exp1', 'metrics'), { recursive: true })
+    await writeFile(join(root!, 'experiments', 'exp1', 'metrics', 'note.txt'), 'hello 中文')
+
+    const ok = await request(ctx.webServer.port, '/experiments/artifact?exp=exp1&path=metrics%2Fnote.txt')
+    expect(ok.status).toBe(200)
+    const body = JSON.parse(ok.body) as { text: string }
+    expect(body.text).toBe('hello 中文')
+
+    const escape = await request(ctx.webServer.port, '/experiments/artifact?exp=exp1&path=..%2F..%2Fsecret.txt')
+    expect(escape.status).toBe(400)
   })
 })

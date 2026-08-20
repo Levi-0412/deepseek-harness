@@ -11,6 +11,7 @@ Host-side bridge that serves [RD-Agent](https://github.com/microsoft/RD-Agent) t
 | `logDir` | yes | — | Root directory holding RD-Agent trace folders (e.g. the RD-Agent checkout's `log` folder). Missing at request time fails loud. |
 | `pythonBin` | no | `python` | Python executable that can import `rdagent`; must point at the RD-Agent environment (e.g. `<RD-Agent>/.venv/Scripts/python.exe` on Windows). |
 | `parseScript` | no | packaged `scripts/parse_trace.py` | Override the converter script. |
+| `experimentRoot` | no | — | Root directory holding local quant-experiment trees (`experiments/<name>/`). When set, the `/experiments` routes serve the unified experiment tree (RD-Agent groups + local experiments, read-only). |
 
 ```yaml
 plugins:

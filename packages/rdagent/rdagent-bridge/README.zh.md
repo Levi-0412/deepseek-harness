@@ -11,6 +11,7 @@
 | `logDir` | 是 | — | 存放 RD-Agent trace 文件夹的根目录（例如 RD-Agent 检出目录下的 `log` 文件夹）。请求时缺失则响亮失败。 |
 | `pythonBin` | 否 | `python` | 可导入 `rdagent` 的 Python 可执行文件；必须指向 RD-Agent 环境（Windows 上例如 `<RD-Agent>/.venv/Scripts/python.exe`）。 |
 | `parseScript` | 否 | 打包的 `scripts/parse_trace.py` | 覆盖转换脚本。 |
+| `experimentRoot` | 否 | — | 存放本地量化实验树（`experiments/<name>/`）的根目录。设置后 `/experiments` 路由提供统一实验树（RD-Agent 组 + 本地实验，只读）。 |
 
 ```yaml
 plugins:

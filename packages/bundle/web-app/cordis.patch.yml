@@ -145,12 +145,15 @@
     # RD-Agent trace bridge: /rdagent routes serving pickled RD-Agent logs as
     # JSON via a Python child process. logDir must point at the RD-Agent log
     # root; pythonBin at an interpreter that can import rdagent.
+    # experimentRoot (optional) points at a local quant-experiment tree
+    # (experiments/<name>/) exposed through the /experiments routes.
     - id: rdagent-bridge
       name: '@deepseek-ai/dsh-rdagent-bridge'
       disabled: !!js '!process.env.DSH_RDAGENT_LOGDIR'
       config:
         logDir: !!js process.env.DSH_RDAGENT_LOGDIR
         pythonBin: !!js process.env.DSH_RDAGENT_PYTHON ?? 'python'
+        experimentRoot: !!js process.env.DSH_RDAGENT_EXPERIMENT_ROOT ?? ''
 
     # Web glue owned by this bundle: resolves the built frontend dist (an
     # assembly fact of dsh-web-app, never user config), mounts the
