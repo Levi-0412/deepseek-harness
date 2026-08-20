@@ -1751,6 +1751,26 @@ export type Config = LocalConfig
 
 来源：[`packages/shell/pwsh-sandbox/src/index.ts:40`](../packages/shell/pwsh-sandbox/src/index.ts)
 
+<a id="deepseek-aidsh-rdagent-bridge"></a>
+
+## `@deepseek-ai/dsh-rdagent-bridge`
+
+需要：`webServer`
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** Root directory holding RD-Agent trace folders. */
+  logDir: string
+  /** Python executable that can import `rdagent` (must match the RD-Agent env). */
+  pythonBin: string
+  /** Override for the parse script; defaults to the packaged scripts/parse_trace.py. */
+  parseScript?: string
+}
+```
+
+来源：[`packages/rdagent/rdagent-bridge/src/index.ts:35`](../packages/rdagent/rdagent-bridge/src/index.ts)
+
 <a id="deepseek-aidsh-repeat-tool-reminder"></a>
 
 ## `@deepseek-ai/dsh-repeat-tool-reminder`
@@ -3473,6 +3493,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-open-in-app`（[`packages/client/ui-open-in-app/src/index.ts`](../packages/client/ui-open-in-app/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-permission-presets`（[`packages/client/ui-permission-presets/src/index.ts`](../packages/client/ui-permission-presets/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-plan`（[`packages/client/ui-plan/src/index.ts`](../packages/client/ui-plan/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-rdagent`（[`packages/client/ui-rdagent/src/index.ts`](../packages/client/ui-rdagent/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-reference`（[`packages/client/ui-reference/src/index.ts`](../packages/client/ui-reference/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-renderer`（[`packages/client/ui-renderer/src/index.ts`](../packages/client/ui-renderer/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-schedule`（[`packages/client/ui-schedule/src/index.ts`](../packages/client/ui-schedule/src/index.ts)）

@@ -142,6 +142,16 @@
         compressionLevel: 1
         compressionThresholdBytes: 1024
 
+    # RD-Agent trace bridge: /rdagent routes serving pickled RD-Agent logs as
+    # JSON via a Python child process. logDir must point at the RD-Agent log
+    # root; pythonBin at an interpreter that can import rdagent.
+    - id: rdagent-bridge
+      name: '@deepseek-ai/dsh-rdagent-bridge'
+      disabled: !!js '!process.env.DSH_RDAGENT_LOGDIR'
+      config:
+        logDir: !!js process.env.DSH_RDAGENT_LOGDIR
+        pythonBin: !!js process.env.DSH_RDAGENT_PYTHON ?? 'python'
+
     # Web glue owned by this bundle: resolves the built frontend dist (an
     # assembly fact of dsh-web-app, never user config), mounts the
     # frontend-static fallback owner, registers the web-surface prompt
@@ -314,6 +324,10 @@
     # Goal surface: GoalBar in the input dock over the goal session projection.
     - id: ui-goal
       name: '@deepseek-ai/dsh-client-ui-goal'
+
+    # RD-Agent traces panel: settings.section over the rdagent-bridge routes.
+    - id: ui-rdagent
+      name: '@deepseek-ai/dsh-client-ui-rdagent'
 
     # The feedback surface: Like/Dislike in the assistant-message action
     # strip, the feedback dialog behind Dislike and /feedback with its
