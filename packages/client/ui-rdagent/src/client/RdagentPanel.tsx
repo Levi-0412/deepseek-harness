@@ -150,14 +150,6 @@ function codeFilesOf(content: unknown): { files: Record<string, string> }[] {
   return out
 }
 
-function hypothesisOf(content: unknown): string | null {
-  if (typeof content === 'string') return content
-  if (typeof content !== 'object' || content === null) return null
-  const c = content as Record<string, unknown>
-  const h = c.hypothesis
-  return typeof h === 'string' ? h : null
-}
-
 /* ── Views ─────────────────────────────────────────────────────────────── */
 
 /** Highlighted metrics: annualized return, IR, max drawdown, mean (with cost). */
@@ -231,27 +223,6 @@ function MetricsView({ messages }: { messages: TraceMessage[] }) {
           </tbody>
         </table>
       </details>
-    </section>
-  )
-}
-
-function HypothesesView({ messages }: { messages: TraceMessage[] }) {
-  const items = useMemo(() => {
-    const out: { tag: string; hypothesis: string }[] = []
-    for (const m of messages) {
-      if (!m.tag.includes('hypothesis generation')) continue
-      const h = hypothesisOf(m.content)
-      if (h !== null) out.push({ tag: m.tag, hypothesis: h })
-    }
-    return out
-  }, [messages])
-  if (items.length === 0) return null
-  return (
-    <section className={styles.card}>
-      <h3 className={styles.cardTitle}>研究假设</h3>
-      {items.map((it, i) => (
-        <blockquote key={`${it.tag}-${i}`} className={styles.hypothesis}>{it.hypothesis}</blockquote>
-      ))}
     </section>
   )
 }
@@ -488,7 +459,6 @@ export function RdagentPanel({ onClose }: { onClose: () => void }) {
                 <>
                   <SummaryView messages={data.messages} />
                   <MetricsView messages={data.messages} />
-                  <HypothesesView messages={data.messages} />
                   <FeedbackView messages={data.messages} />
                   <CodeView messages={data.messages} />
                   <TimelineView messages={data.messages} filter={tagFilter} />
