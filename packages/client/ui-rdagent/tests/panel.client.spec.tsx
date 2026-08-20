@@ -50,12 +50,36 @@ function makeTraceData(): TraceData {
           type: 'DataFrame',
           shape: [3, 9],
           columns: ['account', 'return', 'total_turnover', 'turnover', 'total_cost', 'cost', 'value', 'cash', 'bench'],
+          // Baseline run: RD-Agent records this FIRST; the panel must show the LAST chart.
           rows: [
             { account: 100000000.0, return: 0.0, turnover: 0.0, cost: 0.0, value: 0.0, cash: 100000000.0, bench: 1.0 },
-            { account: 101000000.0, return: 0.01, turnover: 0.5, cost: 25000.0, value: 50000000.0, cash: 51000000.0, bench: 1.005 },
-            { account: 102500000.0, return: 0.015, turnover: 0.4, cost: 20000.0, value: 80000000.0, cash: 22500000.0, bench: 1.012 },
+            { account: 100500000.0, return: 0.005, turnover: 0.3, cost: 15000.0, value: 40000000.0, cash: 60500000.0, bench: 1.003 },
+            { account: 101500000.0, return: 0.01, turnover: 0.35, cost: 17500.0, value: 60000000.0, cash: 41500000.0, bench: 1.008 },
           ],
         },
+      },
+      {
+        tag: 'Loop_0.running.Quantitative Backtesting Chart',
+        timestamp: '2026-08-19T10:00:02Z',
+        pid: '1',
+        content: {
+          type: 'DataFrame',
+          shape: [3, 9],
+          columns: ['account', 'return', 'total_turnover', 'turnover', 'total_cost', 'cost', 'value', 'cash', 'bench'],
+          // Current combination: last chart message, ends at 102.5M. bench is
+          // the single-day-return column (qlib format), not a net-value column.
+          rows: [
+            { account: 100000000.0, return: 0.0, turnover: 0.0, cost: 0.0, value: 0.0, cash: 100000000.0, bench: 0.0 },
+            { account: 101000000.0, return: 0.01, turnover: 0.5, cost: 25000.0, value: 50000000.0, cash: 51000000.0, bench: 0.005 },
+            { account: 102500000.0, return: 0.015, turnover: 0.4, cost: 20000.0, value: 80000000.0, cash: 22500000.0, bench: 0.012 },
+          ],
+        },
+      },
+      {
+        tag: 'Loop_0.running.Qlib_execute_log',
+        timestamp: '2026-08-19T10:00:02Z',
+        pid: '1',
+        content: 'Training until validation scores don\'t improve for 50 rounds\n[20]\ttrain\'s l2: 0.952\tvalid\'s l2: 0.983',
       },
       {
         tag: 'Loop_0.running.runner result',
@@ -69,6 +93,8 @@ function makeTraceData(): TraceData {
               '1day.excess_return_with_cost.annualized_return': 0.18,
               '1day.excess_return_with_cost.information_ratio': 1.9,
               '1day.excess_return_with_cost.max_drawdown': -0.23,
+              'l2.train': 0.9324,
+              'l2.valid': 0.9824,
             },
           },
           based_experiments: [
@@ -138,11 +164,13 @@ describe('RdagentPanel', () => {
     expect(screen.getByText('因子摘要')).toBeTruthy()
     expect(screen.getByText('momentum_20d')).toBeTruthy()
     expect(screen.getByText('volume_ratio_20d')).toBeTruthy()
-    expect(screen.getByText('对话 deepseek-chat')).toBeTruthy()
-    expect(screen.getByText('Embedding BAAI/bge-m3')).toBeTruthy()
-    expect(screen.getByText('研究假设')).toBeTruthy()
-    // the hypothesis renders both in the summary strip and the hypotheses view
-    expect(screen.getAllByText('Momentum factors predict returns').length).toBeGreaterThan(0)
+    expect(screen.getByText('LightGBM')).toBeTruthy()
+    expect(screen.getByText('训练 l2 0.9324')).toBeTruthy()
+    expect(screen.getByText('验证 l2 0.9824')).toBeTruthy()
+    // the hypothesis renders in the summary strip
+    expect(screen.getByText('Momentum factors predict returns')).toBeTruthy()
+    // the standalone hypotheses view was folded into the summary strip
+    expect(screen.queryByText('研究假设')).toBeNull()
     expect(screen.getByText('实现评估反馈')).toBeTruthy()
     expect(screen.getByText('因子实现代码')).toBeTruthy()
     expect(screen.getByText('流程时间线')).toBeTruthy()
@@ -159,11 +187,13 @@ describe('RdagentPanel', () => {
     await waitFor(() => { expect(screen.getByText('回测指标')).toBeTruthy() })
 
     fireEvent.click(screen.getByText('账户轨迹'))
-    expect(await screen.findByText('期末相对收益')).toBeTruthy()
+    expect(await screen.findByText('期末累计收益')).toBeTruthy()
     expect(screen.getByText('2.50%')).toBeTruthy() // (102.5M / 100M) - 1
     expect(screen.getByText('最大回撤')).toBeTruthy()
-    expect(screen.getByRole('img', { name: '账户净值与基准曲线' })).toBeTruthy()
+    expect(screen.getByRole('img', { name: '账户累计收益与基准累计收益曲线' })).toBeTruthy()
     expect(screen.getByText('组合 2.50%')).toBeTruthy()
+    expect(screen.getByText('基准累计收益')).toBeTruthy()
+    expect(screen.getByText('1.71%')).toBeTruthy() // (1.0 * 1.005 * 1.012) - 1
   })
 
   it('renders the flattened baseline comparison from the runner result', async () => {

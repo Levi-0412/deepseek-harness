@@ -51,24 +51,6 @@ function factorNamesOf(messages: TraceMessage[]): string[] {
   return [...new Set(out)]
 }
 
-/** Chat/embedding model names from the LITELLM_SETTINGS snapshot, prefixes stripped. */
-function modelNamesOf(messages: TraceMessage[]): { chat: string; embedding: string } | null {
-  for (const m of messages) {
-    if (!m.tag.includes('LITELLM_SETTINGS')) continue
-    const content = m.content
-    if (typeof content !== 'object' || content === null) continue
-    const rec = content as Record<string, unknown>
-    const strip = (value: unknown): string => {
-      if (typeof value !== 'string' || value === '') return ''
-      return value.includes('/') ? value.slice(value.indexOf('/') + 1) : value
-    }
-    const chat = strip(rec.chat_model)
-    const embedding = strip(rec.embedding_model)
-    if (chat !== '' || embedding !== '') return { chat, embedding }
-  }
-  return null
-}
-
 /** One-line hypothesis from `hypothesis generation` messages. */
 function hypothesisTextOf(messages: TraceMessage[]): string | null {
   for (const m of messages) {
@@ -116,24 +98,42 @@ function metricSnapshotOf(messages: TraceMessage[]): { ir: number | null; annual
   }
 }
 
-/** The qlib account-curve series (backtest chart messages with full rows). */
+/** The qlib account-curve series (the LAST backtest chart message: RD-Agent
+ * records the baseline run first, then the current factor combination, so the
+ * last chart is the one this run produced). */
 export function equitySeriesOf(messages: TraceMessage[]): EquityRow[] | null {
-  for (const m of messages) {
-    if (!m.tag.includes('Backtesting Chart')) continue
-    const content = m.content
-    if (typeof content !== 'object' || content === null) continue
-    const rows = (content as { rows?: unknown }).rows
-    if (!Array.isArray(rows) || rows.length === 0) continue
-    const out: EquityRow[] = []
-    for (const row of rows) {
-      if (typeof row !== 'object' || row === null) continue
-      const rec = row as Record<string, unknown>
-      const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : NaN)
-      out.push({ account: num(rec.account), bench: num(rec.bench), turnover: num(rec.turnover) })
-    }
-    if (out.length >= 2) return out
+  const charts = messages.filter(m => m.tag.includes('Backtesting Chart'))
+  const m = charts[charts.length - 1]
+  if (m === undefined) return null
+  const content = m.content
+  if (typeof content !== 'object' || content === null) return null
+  const rows = (content as { rows?: unknown }).rows
+  if (!Array.isArray(rows) || rows.length === 0) return null
+  const out: EquityRow[] = []
+  for (const row of rows) {
+    if (typeof row !== 'object' || row === null) continue
+    const rec = row as Record<string, unknown>
+    const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : NaN)
+    out.push({ account: num(rec.account), bench: num(rec.bench), turnover: num(rec.turnover) })
   }
-  return null
+  return out.length >= 2 ? out : null
+}
+
+/** Quant model info: the qlib learner family (LightGBM when the execution log
+ * shows its early-stopping training) plus the train/valid loss from the
+ * runner result. */
+function quantModelOf(messages: TraceMessage[]): { name: string; train: number | null; valid: number | null } | null {
+  let isLgbm = false
+  for (const m of messages) {
+    if (!m.tag.includes('Qlib_execute_log')) continue
+    if (typeof m.content === 'string' && m.content.includes('Training until validation scores')) isLgbm = true
+  }
+  const exp = runnerExperimentOf(messages)
+  const values = exp?.result?.values ?? {}
+  const train = values['l2.train'] ?? null
+  const valid = values['l2.valid'] ?? null
+  if (!isLgbm && train === null && valid === null) return null
+  return { name: isLgbm ? 'LightGBM' : 'qlib', train, valid }
 }
 
 function fmtPct(v: number): string {
@@ -144,11 +144,11 @@ function fmtPct(v: number): string {
 /** Summary strip above the metric cards: factors, models, hypothesis, verdicts. */
 export function SummaryView({ messages }: { messages: TraceMessage[] }) {
   const factors = useMemo(() => factorNamesOf(messages), [messages])
-  const models = useMemo(() => modelNamesOf(messages), [messages])
+  const quantModel = useMemo(() => quantModelOf(messages), [messages])
   const hypothesis = useMemo(() => hypothesisTextOf(messages), [messages])
   const verdicts = useMemo(() => verdictStatsOf(messages), [messages])
   const snapshot = useMemo(() => metricSnapshotOf(messages), [messages])
-  if (factors.length === 0 && models === null && hypothesis === null && snapshot === null) return null
+  if (factors.length === 0 && quantModel === null && hypothesis === null && snapshot === null) return null
   return (
     <section className={styles.card}>
       <h3 className={styles.cardTitle}>因子摘要</h3>
@@ -160,12 +160,13 @@ export function SummaryView({ messages }: { messages: TraceMessage[] }) {
           </div>
         </div>
       )}
-      {models !== null && (
+      {quantModel !== null && (
         <div className={styles.summaryRow}>
           <span className={styles.summaryLabel}>模型</span>
           <div className={styles.chipRow}>
-            {models.chat !== '' && <span className={styles.modelChip}>对话 {models.chat}</span>}
-            {models.embedding !== '' && <span className={styles.modelChip}>Embedding {models.embedding}</span>}
+            <span className={styles.modelChip}>{quantModel.name}</span>
+            {quantModel.train !== null && <span className={styles.modelChip}>训练 l2 {quantModel.train.toFixed(4)}</span>}
+            {quantModel.valid !== null && <span className={styles.modelChip}>验证 l2 {quantModel.valid.toFixed(4)}</span>}
           </div>
         </div>
       )}
@@ -190,7 +191,20 @@ const CHART_WIDTH = 720
 const CHART_HEIGHT = 220
 const CHART_PAD = 10
 
-/** Self-contained SVG line chart of the normalized account vs benchmark curves. */
+/** Compounding daily returns into a cumulative-return series (qlib's bench
+ * column holds single-day returns, unlike the account column which holds
+ * equity values). Non-finite days keep the previous accumulation. */
+function cumulativeReturns(daily: number[]): number[] {
+  const out: number[] = []
+  let acc = 1
+  for (const v of daily) {
+    if (Number.isFinite(v)) acc *= 1 + v
+    out.push(acc - 1)
+  }
+  return out
+}
+
+/** Self-contained SVG line chart of the cumulative account vs benchmark returns. */
 export function EquityCurveChart({ rows }: { rows: EquityRow[] }) {
   const { accountPoints, benchPoints, grid, last } = useMemo(() => {
     const first = rows[0]
@@ -199,9 +213,8 @@ export function EquityCurveChart({ rows }: { rows: EquityRow[] }) {
     }
     const n = rows.length
     const a0 = first.account
-    const b0 = first.bench
-    const account = rows.map(r => (a0 !== 0 ? r.account / a0 : r.account))
-    const bench = rows.map(r => (b0 !== 0 ? r.bench / b0 : r.bench))
+    const account = rows.map(r => (a0 !== 0 ? r.account / a0 - 1 : NaN))
+    const bench = cumulativeReturns(rows.map(r => r.bench))
     const finite = [...account, ...bench].filter(Number.isFinite)
     const min = Math.min(...finite)
     const max = Math.max(...finite)
@@ -214,7 +227,7 @@ export function EquityCurveChart({ rows }: { rows: EquityRow[] }) {
       series.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')
     const grid = [0, 1, 2, 3].map((k) => {
       const v = lo + ((hi - lo) * k) / 3
-      return { y: y(v).toFixed(1), label: v.toFixed(2) }
+      return { y: y(v).toFixed(1), label: `${(v * 100).toFixed(0)}%` }
     })
     return {
       accountPoints: poly(account),
@@ -226,7 +239,7 @@ export function EquityCurveChart({ rows }: { rows: EquityRow[] }) {
 
   return (
     <div>
-      <svg viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} className={styles.chart} role="img" aria-label="账户净值与基准曲线">
+      <svg viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} className={styles.chart} role="img" aria-label="账户累计收益与基准累计收益曲线">
         {grid.map((g, i) => (
           <g key={i}>
             <line x1={CHART_PAD} x2={CHART_WIDTH - CHART_PAD} y1={g.y} y2={g.y} className={styles.chartGrid} />
@@ -237,8 +250,8 @@ export function EquityCurveChart({ rows }: { rows: EquityRow[] }) {
         <polyline points={accountPoints} className={styles.chartValue} />
       </svg>
       <div className={styles.chartLegend}>
-        <span className={styles.legendValue}>组合 {fmtPct(last.account - 1)}</span>
-        <span className={styles.legendBench}>基准 {fmtPct(last.bench - 1)}</span>
+        <span className={styles.legendValue}>组合 {fmtPct(last.account)}</span>
+        <span className={styles.legendBench}>基准 {fmtPct(last.bench)}</span>
       </div>
     </div>
   )
@@ -252,7 +265,6 @@ export function EquityView({ messages }: { messages: TraceMessage[] }) {
     const first = rows[0]
     if (first === undefined) return null
     const a0 = first.account
-    const b0 = first.bench
     let peak = -Infinity
     let mdd = 0
     for (const r of rows) {
@@ -268,7 +280,7 @@ export function EquityView({ messages }: { messages: TraceMessage[] }) {
       final: a0 !== 0 ? last.account / a0 - 1 : NaN,
       mdd,
       avgTurnover: turnover,
-      bench: b0 !== 0 ? last.bench / b0 - 1 : NaN,
+      bench: cumulativeReturns(rows.map(r => r.bench))[rows.length - 1] ?? NaN,
     }
   }, [rows])
 
@@ -280,7 +292,7 @@ export function EquityView({ messages }: { messages: TraceMessage[] }) {
       <div className={styles.badgeGrid}>
         <div className={styles.badge}>
           <span className={styles.badgeValue}>{fmtPct(stats.final)}</span>
-          <span className={styles.badgeLabel}>期末相对收益</span>
+          <span className={styles.badgeLabel}>期末累计收益</span>
         </div>
         <div className={styles.badge}>
           <span className={styles.badgeValue}>{fmtPct(stats.mdd)}</span>
@@ -292,7 +304,7 @@ export function EquityView({ messages }: { messages: TraceMessage[] }) {
         </div>
         <div className={styles.badge}>
           <span className={styles.badgeValue}>{fmtPct(stats.bench)}</span>
-          <span className={styles.badgeLabel}>基准期末收益</span>
+          <span className={styles.badgeLabel}>基准累计收益</span>
         </div>
       </div>
     </section>
