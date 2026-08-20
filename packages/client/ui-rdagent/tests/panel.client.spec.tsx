@@ -142,8 +142,41 @@ function makeTraceData(): TraceData {
 function stubBridge(): void {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL): Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }> => {
     const url = typeof input === 'string' ? input : (input as { url: string }).url
-    if (url.includes('/rdagent/traces')) {
-      return { ok: true, status: 200, json: async () => ({ traces: [{ id: 't1', updatedAt: '2026-08-19T10:00:00Z', pklCount: 5 }] }) }
+    if (url.includes('/experiments/run')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          name: 'exp2',
+          source: 'local',
+          runs: [],
+          artifacts: [{ label: 'metrics/daily_series.json', kind: 'series', path: 'metrics/daily_series.json', size: 1200 }],
+          series: [{ label: 'band_topk', dates: ['2025-01-02', '2025-01-03'], values: [0.01, -0.02] }],
+          reports: [{ label: 'run_logs/fetch.log', text: 'login success!' }],
+        }),
+      }
+    }
+    if (url.includes('/experiments')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          experiments: [
+            {
+              name: '量价因子组',
+              source: 'rdagent',
+              runs: [{ id: 't1', startedAt: '2026-08-19T10:00:00Z', meta: { pklCount: 5 } }],
+              artifacts: [],
+            },
+            {
+              name: 'exp2',
+              source: 'local',
+              runs: [],
+              artifacts: [{ label: 'band/band_members.json', kind: 'series', path: 'band/band_members.json', size: 44000 }],
+            },
+          ],
+        }),
+      }
     }
     if (url.includes('/rdagent/trace')) {
       return { ok: true, status: 200, json: async () => makeTraceData() }
@@ -153,10 +186,26 @@ function stubBridge(): void {
 }
 
 describe('RdagentPanel', () => {
-  it('renders the trace list and all structured views after selecting a trace', async () => {
+  /** Expand the rdagent group and select the t1 trace. */
+  async function selectTrace(): Promise<void> {
+    await waitFor(() => { expect(screen.getByText('量价因子组')).toBeTruthy() })
+    fireEvent.click(screen.getByText('量价因子组'))
+    await waitFor(() => { expect(screen.getByText('t1')).toBeTruthy() })
+    fireEvent.click(screen.getByText('t1'))
+    await waitFor(() => { expect(screen.getByText('回测指标')).toBeTruthy() })
+  }
+
+  it('renders the two-level experiment tree and structured views after selecting a trace', async () => {
     stubBridge()
     render(<RdagentPanel onClose={() => {}} />)
 
+    // first level: experiment groups with source badges
+    await waitFor(() => { expect(screen.getByText('量价因子组')).toBeTruthy() })
+    expect(screen.getByText('exp2')).toBeTruthy()
+    expect(screen.getAllByText('1 运行').length).toBeGreaterThan(0)
+
+    // expand the group, then select the trace
+    fireEvent.click(screen.getByText('量价因子组'))
     await waitFor(() => { expect(screen.getByText('t1')).toBeTruthy() })
     fireEvent.click(screen.getByText('t1'))
 
@@ -181,10 +230,7 @@ describe('RdagentPanel', () => {
   it('renders the account-curve view with chart and stats', async () => {
     stubBridge()
     render(<RdagentPanel onClose={() => {}} />)
-
-    await waitFor(() => { expect(screen.getByText('t1')).toBeTruthy() })
-    fireEvent.click(screen.getByText('t1'))
-    await waitFor(() => { expect(screen.getByText('回测指标')).toBeTruthy() })
+    await selectTrace()
 
     fireEvent.click(screen.getByText('账户轨迹'))
     expect(await screen.findByText('期末累计收益')).toBeTruthy()
@@ -199,12 +245,55 @@ describe('RdagentPanel', () => {
   it('renders the flattened baseline comparison from the runner result', async () => {
     stubBridge()
     render(<RdagentPanel onClose={() => {}} />)
-
-    await waitFor(() => { expect(screen.getByText('t1')).toBeTruthy() })
-    fireEvent.click(screen.getByText('t1'))
-    await waitFor(() => { expect(screen.getByText('回测指标')).toBeTruthy() })
+    await selectTrace()
     // headline badge meta shows the baseline IR from based_experiments[0]
     expect(screen.getByText(/baseline 2\.300/)).toBeTruthy()
+  })
+
+  it('renders local experiment detail without touching /rdagent/trace', async () => {
+    const fetches: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL): Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }> => {
+      const url = typeof input === 'string' ? input : (input as { url: string }).url
+      fetches.push(url)
+      if (url.includes('/experiments/run')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            name: 'exp2',
+            source: 'local',
+            runs: [],
+            artifacts: [{ label: 'metrics/daily_series.json', kind: 'series', path: 'metrics/daily_series.json', size: 1200 }],
+            series: [{ label: 'band_topk', dates: ['2025-01-02', '2025-01-03'], values: [0.01, -0.02] }],
+            reports: [{ label: 'run_logs/fetch.log', text: 'login success!' }],
+          }),
+        }
+      }
+      if (url.includes('/experiments')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            experiments: [
+              { name: 'exp2', source: 'local', runs: [], artifacts: [], warnings: [] },
+            ],
+          }),
+        }
+      }
+      return { ok: false, status: 404, json: async () => ({ error: 'not found' }) }
+    }))
+    render(<RdagentPanel onClose={() => {}} />)
+
+    await waitFor(() => { expect(screen.getByText('exp2')).toBeTruthy() })
+    fireEvent.click(screen.getByText('exp2'))
+
+    // local detail view renders series chart, artifacts and reports
+    expect(await screen.findByText('指标序列')).toBeTruthy()
+    expect(screen.getByRole('img', { name: '序列曲线' })).toBeTruthy()
+    expect(screen.getByText('login success!')).toBeTruthy()
+    expect(screen.getByText(/daily_series\.json/)).toBeTruthy()
+    // never hits the rdagent trace endpoint for a local selection
+    expect(fetches.some(f => f.includes('/rdagent/trace'))).toBe(false)
   })
 
   it('surfaces bridge errors', async () => {

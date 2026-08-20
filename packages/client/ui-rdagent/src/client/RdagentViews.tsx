@@ -1,12 +1,54 @@
 /**
  * RD-Agent trace panel auxiliary views: the factor summary strip above the
- * metric cards and the qlib account-curve view (self-contained SVG chart, no
- * chart dependency). All extraction functions are pure over the bridge
- * message list and shared with the main panel.
+ * metric cards, the qlib account-curve view, and the local-experiment detail
+ * view (self-contained SVG charts, no chart dependency). All extraction
+ * functions are pure over the bridge message list and shared with the panel.
  */
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import styles from './RdagentPanel.module.css'
 import { pickMetrics, type MetricSeries, type TraceMessage } from './RdagentPanel.tsx'
+
+/** One run entity in the unified experiment tree. */
+export interface ExperimentRun {
+  id: string
+  startedAt?: string
+  durationSec?: number
+  status?: string
+  meta: Record<string, unknown>
+}
+
+/** One experiment-scoped artifact. */
+export interface ExperimentArtifact {
+  label: string
+  kind: 'series' | 'table' | 'report' | 'model' | 'binary' | 'log'
+  path: string
+  size?: number
+}
+
+/** One experiment group in the unified tree (rdagent or local source). */
+export interface ExperimentGroup {
+  name: string
+  source: 'rdagent' | 'local'
+  runs: ExperimentRun[]
+  artifacts: ExperimentArtifact[]
+  warnings?: string[]
+}
+
+/** Unified tree response from /experiments. */
+export interface ExperimentData {
+  experiments: ExperimentGroup[]
+}
+
+/** Local experiment detail from /experiments/run. */
+export interface LocalExperimentDetail {
+  name: string
+  source: 'local'
+  runs: ExperimentRun[]
+  artifacts: ExperimentArtifact[]
+  warnings?: string[]
+  series: { label: string; dates: string[]; values: number[] }[]
+  reports: { label: string; text: string }[]
+}
 
 /** One qlib account-curve row (from the backtest chart DataFrame). */
 export interface EquityRow {
@@ -308,5 +350,133 @@ export function EquityView({ messages }: { messages: TraceMessage[] }) {
         </div>
       </div>
     </section>
+  )
+}
+
+const SERIES_WIDTH = 720
+const SERIES_HEIGHT = 200
+const SERIES_PAD = 10
+const SERIES_COLORS = ['chartValue', 'chartBench', 'chartGrid'] as const
+
+/** Generic multi-series SVG line chart (used by the local-experiment view). */
+export function SeriesChart({ series }: { series: { label: string; dates: string[]; values: number[] }[] }) {
+  const { lines, grid } = useMemo(() => {
+    const n = series[0]?.values.length ?? 0
+    if (n < 2) return { lines: [], grid: [] }
+    const finite = series.flatMap(s => s.values).filter(Number.isFinite)
+    const min = Math.min(...finite)
+    const max = Math.max(...finite)
+    const span = max - min
+    const lo = span < 1e-9 ? min - 0.5 : min - span * 0.05
+    const hi = span < 1e-9 ? max + 0.5 : max + span * 0.05
+    const x = (i: number): number => SERIES_PAD + (i / (n - 1)) * (SERIES_WIDTH - 2 * SERIES_PAD)
+    const y = (v: number): number => SERIES_HEIGHT - SERIES_PAD - ((v - lo) / (hi - lo)) * (SERIES_HEIGHT - 2 * SERIES_PAD)
+    const grid = [0, 1, 2, 3].map((k) => {
+      const v = lo + ((hi - lo) * k) / 3
+      return { y: y(v).toFixed(1), label: v.toFixed(3) }
+    })
+    const lines = series.slice(0, SERIES_COLORS.length).map((s, idx) => ({
+      label: s.label,
+      color: SERIES_COLORS[idx] ?? 'chartGrid',
+      points: s.values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' '),
+      last: s.values[n - 1] ?? NaN,
+    }))
+    return { lines, grid }
+  }, [series])
+
+  if (lines.length === 0) return null
+  return (
+    <div>
+      <svg viewBox={`0 0 ${SERIES_WIDTH} ${SERIES_HEIGHT}`} className={styles.chart} role="img" aria-label="序列曲线">
+        {grid.map((g, i) => (
+          <g key={i}>
+            <line x1={SERIES_PAD} x2={SERIES_WIDTH - SERIES_PAD} y1={g.y} y2={g.y} className={styles.chartGrid} />
+            <text x={SERIES_WIDTH - SERIES_PAD} y={g.y} className={styles.chartLabel}>{g.label}</text>
+          </g>
+        ))}
+        {lines.map(l => (
+          <polyline key={l.label} points={l.points} className={styles[l.color]} />
+        ))}
+      </svg>
+      <div className={styles.chartLegend}>
+        {lines.map((l, i) => (
+          <span key={l.label} className={styles[SERIES_COLORS[i] ?? 'chartGrid']}>
+            {l.label} {Number.isFinite(l.last) ? l.last.toFixed(3) : '—'}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** Local-experiment detail view: series charts, run metadata, reports. */
+export function LocalRunView({ detail }: { detail: LocalExperimentDetail }) {
+  const [openReports, setOpenReports] = useState<Set<string>>(new Set())
+  const toggleReport = (label: string): void => {
+    setOpenReports((prev) => {
+      const next = new Set(prev)
+      if (next.has(label)) next.delete(label)
+      else next.add(label)
+      return next
+    })
+  }
+
+  return (
+    <div>
+      {detail.series.length > 0 && (
+        <section className={styles.card}>
+          <h3 className={styles.cardTitle}>指标序列</h3>
+          <SeriesChart series={detail.series} />
+        </section>
+      )}
+      {detail.runs.length > 0 && (
+        <section className={styles.card}>
+          <h3 className={styles.cardTitle}>运行记录（{detail.runs.length}）</h3>
+          <div className={styles.tableWrap}>
+            <table className={styles.metricsTable}>
+              <thead>
+                <tr><th>运行</th><th>状态</th><th>耗时</th></tr>
+              </thead>
+              <tbody>
+                {detail.runs.map(r => (
+                  <tr key={r.id}>
+                    <td>{r.id}</td>
+                    <td className={styles.muted}>{r.status ?? '—'}</td>
+                    <td className={styles.muted}>{r.durationSec !== undefined ? `${Math.round(r.durationSec / 60)} 分钟` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+      {detail.artifacts.length > 0 && (
+        <section className={styles.card}>
+          <h3 className={styles.cardTitle}>产物（{detail.artifacts.length}）</h3>
+          <div className={styles.chipRow}>
+            {detail.artifacts.slice(0, 40).map(a => (
+              <span key={a.path} className={styles.modelChip}>
+                {a.label}{a.size !== undefined ? ` · ${(a.size / 1024).toFixed(0)}KB` : ''}
+              </span>
+            ))}
+            {detail.artifacts.length > 40 && <span className={styles.muted}>… 其余 {detail.artifacts.length - 40} 项</span>}
+          </div>
+        </section>
+      )}
+      {detail.reports.length > 0 && (
+        <section className={styles.card}>
+          <h3 className={styles.cardTitle}>报告与日志</h3>
+          {detail.reports.map(r => (
+            <details key={r.label} open={openReports.has(r.label)}>
+              <summary onClick={(e) => { e.preventDefault(); toggleReport(r.label) }}>{r.label}</summary>
+              <pre className={styles.feedbackPre}>{r.text}</pre>
+            </details>
+          ))}
+        </section>
+      )}
+      {detail.warnings !== undefined && detail.warnings.length > 0 && (
+        <div className={styles.error}>{detail.warnings.join('；')}</div>
+      )}
+    </div>
   )
 }

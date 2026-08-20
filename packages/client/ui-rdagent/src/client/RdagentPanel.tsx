@@ -6,7 +6,14 @@
  * loop-grouped timeline, with 30s polling while a trace is selected.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { EquityView, SummaryView } from './RdagentViews.tsx'
+import {
+  EquityView,
+  LocalRunView,
+  SummaryView,
+  type ExperimentData,
+  type ExperimentGroup,
+  type LocalExperimentDetail,
+} from './RdagentViews.tsx'
 import styles from './RdagentPanel.module.css'
 
 /** One trace directory under the bridge's logDir. */
@@ -31,11 +38,6 @@ export interface TraceData {
   messages: TraceMessage[]
 }
 
-/** Bridge `/rdagent/traces` envelope. */
-export interface TracesData {
-  traces: TraceSummary[]
-}
-
 /** One backtest metric series: values keyed by dotted metric name. */
 export interface MetricSeries {
   type?: string
@@ -53,9 +55,13 @@ export interface FeedbackRecord {
   value_generated_flag?: boolean
 }
 
-const TRACES_URL = '/rdagent/traces'
 const TRACE_URL = '/rdagent/trace'
+const EXPERIMENTS_URL = '/experiments'
+const EXPERIMENT_RUN_URL = '/experiments/run'
 const REFRESH_MS = 30000
+
+/** Unified tree selection: an RD-Agent trace or a local experiment. */
+export type Selection = { source: 'rdagent'; traceId: string } | { source: 'local'; exp: string } | null
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url)
@@ -366,25 +372,33 @@ function ContentView({ content }: { content: unknown }) {
  * @param props - close callback owned by the trigger that hosts the drawer.
  */
 export function RdagentPanel({ onClose }: { onClose: () => void }) {
-  const [traces, setTraces] = useState<TraceSummary[] | null>(null)
+  const [groups, setGroups] = useState<ExperimentGroup[] | null>(null)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [selection, setSelection] = useState<Selection>(null)
   const [error, setError] = useState<string>('')
-  const [selected, setSelected] = useState<string>('')
   const [data, setData] = useState<TraceData | null>(null)
+  const [localDetail, setLocalDetail] = useState<LocalExperimentDetail | null>(null)
   const [loading, setLoading] = useState(false)
   const [tagFilter, setTagFilter] = useState('')
   const [view, setView] = useState<'overview' | 'equity' | 'stream'>('overview')
 
+  // Unified experiment tree, refreshed on the polling interval.
   useEffect(() => {
     let alive = true
-    fetchJson<TracesData>(TRACES_URL)
-      .then((d) => {
-        if (alive) setTraces(d.traces)
-      })
-      .catch((e: unknown) => {
-        if (alive) setError(e instanceof Error ? e.message : String(e))
-      })
+    const load = (): void => {
+      fetchJson<ExperimentData>(EXPERIMENTS_URL)
+        .then((d) => {
+          if (alive) setGroups(d.experiments)
+        })
+        .catch((e: unknown) => {
+          if (alive) setError(e instanceof Error ? e.message : String(e))
+        })
+    }
+    load()
+    const timer = setInterval(load, REFRESH_MS)
     return () => {
       alive = false
+      clearInterval(timer)
     }
   }, [])
 
@@ -397,12 +411,59 @@ export function RdagentPanel({ onClose }: { onClose: () => void }) {
       .finally(() => { setLoading(false) })
   }, [])
 
+  // RD-Agent trace detail with 30s polling; local selections never hit /rdagent/trace.
   useEffect(() => {
-    if (selected === '') return
-    loadTrace(selected)
-    const timer = setInterval(() => { loadTrace(selected) }, REFRESH_MS)
+    if (selection === null || selection.source !== 'rdagent') {
+      setData(null)
+      return
+    }
+    const id = selection.traceId
+    loadTrace(id)
+    const timer = setInterval(() => { loadTrace(id) }, REFRESH_MS)
     return () => { clearInterval(timer) }
-  }, [selected, loadTrace])
+  }, [selection, loadTrace])
+
+  // Local experiment detail, fetched once per selection.
+  useEffect(() => {
+    if (selection === null || selection.source !== 'local') {
+      setLocalDetail(null)
+      return
+    }
+    let alive = true
+    setLoading(true)
+    setError('')
+    fetchJson<LocalExperimentDetail>(`${EXPERIMENT_RUN_URL}?exp=${encodeURIComponent(selection.exp)}`)
+      .then((d) => {
+        if (alive) setLocalDetail(d)
+      })
+      .catch((e: unknown) => {
+        if (alive) setError(e instanceof Error ? e.message : String(e))
+      })
+      .finally(() => {
+        if (alive) setLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [selection])
+
+  const selectRun = (source: 'rdagent' | 'local', id: string): void => {
+    setView('overview')
+    setTagFilter('')
+    setError('')
+    setData(null)
+    setLocalDetail(null)
+    setSelection(source === 'rdagent' ? { source: 'rdagent', traceId: id } : { source: 'local', exp: id })
+  }
+
+  const toggleGroup = (name: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
 
   return (
     <div className={styles.panel}>
@@ -414,30 +475,69 @@ export function RdagentPanel({ onClose }: { onClose: () => void }) {
       {error !== '' && <div className={styles.error}>bridge error: {error}</div>}
       <div className={styles.body}>
         <aside className={styles.side}>
-          {traces === null ? (
-            <div className={styles.muted}>loading traces…</div>
-          ) : traces.length === 0 ? (
-            <div className={styles.muted}>no traces in logDir</div>
+          {groups === null ? (
+            <div className={styles.muted}>loading experiments…</div>
+          ) : groups.length === 0 ? (
+            <div className={styles.muted}>no experiments found</div>
           ) : (
             <ul className={styles.traceList}>
-              {traces.map(t => (
-                <li key={t.id}>
+              {groups.map(g => (
+                <li key={`${g.source}:${g.name}`}>
                   <button
                     type="button"
-                    className={selected === t.id ? styles.traceActive : styles.trace}
-                    onClick={() => { setSelected(t.id) }}
+                    className={styles.groupRow}
+                    onClick={() => {
+                      toggleGroup(g.name)
+                      // run-less local experiments select on the group row itself
+                      if (g.source === 'local' && g.runs.length === 0) selectRun('local', g.name)
+                    }}
                   >
-                    <span className={styles.traceId}>{t.id}</span>
-                    <span className={styles.muted}>{t.pklCount} pkl · {formatTime(t.updatedAt)}</span>
+                    <span className={styles.groupCaret}>{expanded.has(g.name) ? '▾' : '▸'}</span>
+                    <span className={styles.sourceBadge}>{g.source === 'rdagent' ? 'RD' : '本地'}</span>
+                    <span className={styles.groupName}>{g.name}</span>
+                    <span className={styles.muted}>{g.runs.length} 运行</span>
                   </button>
+                  {expanded.has(g.name) && (
+                    <ul className={styles.traceList}>
+                      {g.runs.map((r) => {
+                        const active = g.source === 'rdagent'
+                          ? (selection?.source === 'rdagent' && selection.traceId === r.id)
+                          : (selection?.source === 'local' && selection.exp === g.name)
+                        return (
+                          <li key={r.id}>
+                            <button
+                              type="button"
+                              className={active ? styles.traceActive : styles.trace}
+                              onClick={() => {
+                                if (g.source === 'rdagent') selectRun('rdagent', r.id)
+                                else selectRun('local', g.name)
+                              }}
+                            >
+                              <span className={styles.traceId}>{r.id}</span>
+                              <span className={styles.muted}>
+                                {r.startedAt !== undefined ? formatTime(r.startedAt) : ''}
+                                {r.durationSec !== undefined ? ` · ${Math.round(r.durationSec / 60)} 分钟` : ''}
+                              </span>
+                            </button>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
                 </li>
               ))}
             </ul>
           )}
         </aside>
         <main className={styles.stream}>
-          {selected === '' ? (
-            <div className={styles.muted}>选择左侧 trace 查看运行记录</div>
+          {selection === null ? (
+            <div className={styles.muted}>选择左侧实验查看记录</div>
+          ) : selection.source === 'local' ? (
+            localDetail === null ? (
+              <div className={styles.muted}>{loading ? 'loading…' : 'local detail unavailable'}</div>
+            ) : (
+              <LocalRunView detail={localDetail} />
+            )
           ) : data === null ? (
             <div className={styles.muted}>loading…</div>
           ) : (
