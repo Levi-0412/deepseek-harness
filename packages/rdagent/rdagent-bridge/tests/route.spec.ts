@@ -276,4 +276,23 @@ describe('local experiments', () => {
     const escape = await request(ctx.webServer.port, '/experiments/artifact?exp=exp1&path=..%2F..%2Fsecret.txt')
     expect(escape.status).toBe(400)
   })
+
+  it('serves run-level detail with meta and file listing', async () => {
+    const ctx = await loadComposition(0, true)
+    await mkdir(join(root!, 'experiments', 'exp1s', 'runs', 'F5c_s2023', 'model0'), { recursive: true })
+    await writeFile(
+      join(root!, 'experiments', 'exp1s', 'manifest.json'),
+      `${JSON.stringify({ generated: 't', design: 'v2', runs: [] })}\n` +
+        `${JSON.stringify({ run_id: 'F5c_s2023', tag: 'F5c', seed: 2023, secs: 3258, moved: true })}\n`,
+    )
+    await writeFile(join(root!, 'experiments', 'exp1s', 'runs', 'F5c_s2023', 'model0', 'model.pth'), Buffer.alloc(16))
+    await writeFile(join(root!, 'experiments', 'exp1s', 'runs', 'F5c_s2023', 'losses.csv'), 'a,b\n1,2\n')
+
+    const res = await request(ctx.webServer.port, '/experiments/run?exp=exp1s&run=F5c_s2023')
+    expect(res.status).toBe(200)
+    const body = JSON.parse(res.body) as { run: { id: string; meta: Record<string, unknown>; files: { path: string }[] } }
+    expect(body.run.id).toBe('F5c_s2023')
+    expect(body.run.meta.seed).toBe(2023)
+    expect(body.run.files.map(f => f.path).sort()).toEqual(['losses.csv', 'model0/model.pth'])
+  })
 })

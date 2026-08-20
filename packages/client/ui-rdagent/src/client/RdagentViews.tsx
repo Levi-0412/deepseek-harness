@@ -39,6 +39,13 @@ export interface ExperimentData {
   experiments: ExperimentGroup[]
 }
 
+/** One run file entry. */
+export interface LocalRunFile {
+  path: string
+  size: number
+  kind: string
+}
+
 /** Local experiment detail from /experiments/run. */
 export interface LocalExperimentDetail {
   name: string
@@ -48,6 +55,7 @@ export interface LocalExperimentDetail {
   warnings?: string[]
   series: { label: string; dates: string[]; values: number[] }[]
   reports: { label: string; text: string }[]
+  run?: { id: string; meta: Record<string, unknown>; files: LocalRunFile[] }
 }
 
 /** One qlib account-curve row (from the backtest chart DataFrame). */
@@ -423,6 +431,35 @@ export function LocalRunView({ detail }: { detail: LocalExperimentDetail }) {
 
   return (
     <div>
+      {detail.run !== undefined && (
+        <section className={styles.card}>
+          <h3 className={styles.cardTitle}>运行 {detail.run.id}</h3>
+          <div className={styles.tableWrap}>
+            <table className={styles.metricsTable}>
+              <thead>
+                <tr><th>键</th><th>值</th></tr>
+              </thead>
+              <tbody>
+                {Object.entries(detail.run.meta).filter(([k]) => k !== 'run_id').slice(0, 12).map(([k, v]) => (
+                  <tr key={k}>
+                    <td className={styles.muted}>{k}</td>
+                    <td>{typeof v === 'string' ? v.slice(0, 80) : JSON.stringify(v)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {detail.run.files.length > 0 && (
+            <div className={styles.chipRow}>
+              {detail.run.files.slice(0, 20).map(f => (
+                <span key={f.path} className={styles.modelChip}>
+                  {f.path} · {(f.size / 1024).toFixed(0)}KB
+                </span>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
       {detail.series.length > 0 && (
         <section className={styles.card}>
           <h3 className={styles.cardTitle}>指标序列</h3>
