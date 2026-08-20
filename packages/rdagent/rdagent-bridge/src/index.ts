@@ -25,7 +25,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
-import { buildLocalTree, extractSeries, readTextFile, type LocalExperiment } from './local.ts'
+import { buildLocalTree, extractSeries, listRunFiles, readTextFile, type LocalExperiment } from './local.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -279,6 +279,7 @@ export function apply(ctx: Context, config: Config): () => void {
       if (pathname === '/experiments/run' && localRoot !== null) {
         const query = readQuery(req.url)
         const exp = query.get('exp') ?? ''
+        const run = query.get('run') ?? ''
         const expDir = path.resolve(localRoot, exp)
         if (exp === '' || !expDir.startsWith(path.resolve(localRoot) + path.sep)) {
           sendJson(res, 400, { error: 'invalid experiment' })
@@ -300,7 +301,25 @@ export function apply(ctx: Context, config: Config): () => void {
           const text = await readTextFile(filePath).catch(() => null)
           if (text !== null) reports.push({ label: artifact.label, text: text.slice(0, 100 * 1024) })
         }
-        sendJson(res, 200, { name: experiment.name, source: 'local', runs: experiment.runs, artifacts: experiment.artifacts, warnings: experiment.warnings, series, reports })
+        let runDetail: { id: string; meta: Record<string, unknown>; files: unknown[] } | undefined
+        if (run !== '') {
+          const known = experiment.runs.some(r => r.id === run)
+          runDetail = {
+            id: run,
+            meta: experiment.runs.find(r => r.id === run)?.meta ?? {},
+            files: known ? await listRunFiles(localRoot, exp, run) : [],
+          }
+        }
+        sendJson(res, 200, {
+          name: experiment.name,
+          source: 'local',
+          runs: experiment.runs,
+          artifacts: experiment.artifacts,
+          warnings: experiment.warnings,
+          series,
+          reports,
+          ...(runDetail !== undefined ? { run: runDetail } : {}),
+        })
         return
       }
       if (pathname === '/experiments/artifact' && localRoot !== null) {

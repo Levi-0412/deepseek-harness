@@ -60,8 +60,11 @@ const EXPERIMENTS_URL = '/experiments'
 const EXPERIMENT_RUN_URL = '/experiments/run'
 const REFRESH_MS = 30000
 
-/** Unified tree selection: an RD-Agent trace or a local experiment. */
-export type Selection = { source: 'rdagent'; traceId: string } | { source: 'local'; exp: string } | null
+/** Unified tree selection: an RD-Agent trace or a local experiment (optionally a run). */
+export type Selection =
+  | { source: 'rdagent'; traceId: string }
+  | { source: 'local'; exp: string; run?: string }
+  | null
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url)
@@ -432,7 +435,8 @@ export function RdagentPanel({ onClose }: { onClose: () => void }) {
     let alive = true
     setLoading(true)
     setError('')
-    fetchJson<LocalExperimentDetail>(`${EXPERIMENT_RUN_URL}?exp=${encodeURIComponent(selection.exp)}`)
+    const runQuery = selection.run === undefined ? '' : `&run=${encodeURIComponent(selection.run)}`
+    fetchJson<LocalExperimentDetail>(`${EXPERIMENT_RUN_URL}?exp=${encodeURIComponent(selection.exp)}${runQuery}`)
       .then((d) => {
         if (alive) setLocalDetail(d)
       })
@@ -447,13 +451,13 @@ export function RdagentPanel({ onClose }: { onClose: () => void }) {
     }
   }, [selection])
 
-  const selectRun = (source: 'rdagent' | 'local', id: string): void => {
+  const selectRun = (source: 'rdagent' | 'local', id: string, run?: string): void => {
     setView('overview')
     setTagFilter('')
     setError('')
     setData(null)
     setLocalDetail(null)
-    setSelection(source === 'rdagent' ? { source: 'rdagent', traceId: id } : { source: 'local', exp: id })
+    setSelection(source === 'rdagent' ? { source: 'rdagent', traceId: id } : { source: 'local', exp: id, ...(run !== undefined ? { run } : {}) })
   }
 
   const toggleGroup = (name: string): void => {
@@ -502,7 +506,7 @@ export function RdagentPanel({ onClose }: { onClose: () => void }) {
                       {g.runs.map((r) => {
                         const active = g.source === 'rdagent'
                           ? (selection?.source === 'rdagent' && selection.traceId === r.id)
-                          : (selection?.source === 'local' && selection.exp === g.name)
+                          : (selection?.source === 'local' && selection.exp === g.name && selection.run === r.id)
                         return (
                           <li key={r.id}>
                             <button
@@ -510,7 +514,7 @@ export function RdagentPanel({ onClose }: { onClose: () => void }) {
                               className={active ? styles.traceActive : styles.trace}
                               onClick={() => {
                                 if (g.source === 'rdagent') selectRun('rdagent', r.id)
-                                else selectRun('local', g.name)
+                                else selectRun('local', g.name, r.id)
                               }}
                             >
                               <span className={styles.traceId}>{r.id}</span>

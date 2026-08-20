@@ -183,6 +183,29 @@ export async function readTextFile(filePath: string, limit = LIMITS.textBytes): 
   return decodeText(buffer)
 }
 
+/** One file entry inside a run directory. */
+export interface RunFile {
+  path: string
+  size: number
+  kind: LocalArtifact['kind']
+}
+
+/** List the files inside one run directory (recursive, size-guarded). */
+export async function listRunFiles(root: string, exp: string, runId: string): Promise<RunFile[]> {
+  const runDir = path.join(root, exp, 'runs', runId)
+  const entries = await readdir(runDir, { withFileTypes: true, recursive: true }).catch(() => [])
+  const files: RunFile[] = []
+  for (const entry of entries) {
+    if (!entry.isFile()) continue
+    const rel = path.relative(runDir, path.join(entry.parentPath, entry.name)).replace(/\\/g, '/')
+    const size = (await stat(path.join(runDir, rel)).catch(() => null))?.size
+    if (size === undefined) continue
+    files.push({ path: rel, size, kind: artifactKind(entry.name) })
+  }
+  files.sort((a, b) => (a.path < b.path ? -1 : 1))
+  return files
+}
+
 /** List one experiment directory: manifest runs (when present) + artifacts. */
 async function scanExperiment(root: string, name: string, depth: number): Promise<LocalExperiment | null> {
   const dir = path.join(root, name)
@@ -246,9 +269,26 @@ async function scanExperiment(root: string, name: string, depth: number): Promis
   return { name, runs, artifacts, warnings }
 }
 
-/** Build the local experiment tree under `experimentsRoot`. */
+/** mtime-keyed tree cache: root plus per-experiment directory mtimes must all
+ * match for a hit (an appended manifest row changes the experiment dir mtime). */
+const treeCache = new Map<string, { mtimeMs: number; dirMtimes: number[]; data: { experiments: LocalExperiment[] } }>()
+
+/** Build the local experiment tree under `experimentsRoot` (mtime-cached). */
 export async function buildLocalTree(root: string): Promise<{ experiments: LocalExperiment[] }> {
+  const rootInfo = await stat(root)
   const entries = await readdir(root, { withFileTypes: true })
+  const dirMtimes: number[] = []
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const info = await stat(path.join(root, entry.name)).catch(() => null)
+    if (info !== null) dirMtimes.push(info.mtimeMs)
+  }
+  dirMtimes.sort((a, b) => a - b)
+  const cached = treeCache.get(root)
+  if (cached !== undefined && cached.mtimeMs === rootInfo.mtimeMs && cached.dirMtimes.length === dirMtimes.length
+    && cached.dirMtimes.every((v, i) => v === dirMtimes[i])) {
+    return cached.data
+  }
   const experiments: LocalExperiment[] = []
   for (const entry of entries) {
     if (!entry.isDirectory() || experiments.length >= LIMITS.maxExperiments) continue
@@ -257,5 +297,7 @@ export async function buildLocalTree(root: string): Promise<{ experiments: Local
     if (experiment !== null) experiments.push(experiment)
   }
   experiments.sort((a, b) => (a.name < b.name ? -1 : 1))
-  return { experiments }
+  const data = { experiments }
+  treeCache.set(root, { mtimeMs: rootInfo.mtimeMs, dirMtimes, data })
+  return data
 }

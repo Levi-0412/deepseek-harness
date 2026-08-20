@@ -296,6 +296,54 @@ describe('RdagentPanel', () => {
     expect(fetches.some(f => f.includes('/rdagent/trace'))).toBe(false)
   })
 
+  it('renders run-level detail when a local run row is selected', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL): Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }> => {
+      const url = typeof input === 'string' ? input : (input as { url: string }).url
+      if (url.includes('/experiments/run')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            name: 'exp1s',
+            source: 'local',
+            runs: [{ id: 'F5c_s2023', durationSec: 3258, status: 'moved', meta: { run_id: 'F5c_s2023', seed: 2023 } }],
+            artifacts: [],
+            series: [],
+            reports: [],
+            run: {
+              id: 'F5c_s2023',
+              meta: { run_id: 'F5c_s2023', seed: 2023, moved: true },
+              files: [{ path: 'model0/model.pth', size: 1024, kind: 'model' }, { path: 'losses.csv', size: 512, kind: 'table' }],
+            },
+          }),
+        }
+      }
+      if (url.includes('/experiments')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            experiments: [
+              { name: 'exp1s', source: 'local', runs: [{ id: 'F5c_s2023' }], artifacts: [] },
+            ],
+          }),
+        }
+      }
+      return { ok: false, status: 404, json: async () => ({ error: 'not found' }) }
+    }))
+    render(<RdagentPanel onClose={() => {}} />)
+
+    await waitFor(() => { expect(screen.getByText('exp1s')).toBeTruthy() })
+    fireEvent.click(screen.getByText('exp1s'))
+    await waitFor(() => { expect(screen.getByText('F5c_s2023')).toBeTruthy() })
+    fireEvent.click(screen.getByText('F5c_s2023'))
+
+    // run card renders the run meta and file chips
+    expect(await screen.findByText(/运行 F5c_s2023/)).toBeTruthy()
+    expect(screen.getByText('2023')).toBeTruthy()
+    expect(screen.getByText(/model0\/model\.pth/)).toBeTruthy()
+  })
+
   it('surfaces bridge errors', async () => {
     vi.stubGlobal('fetch', vi.fn(async (): Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }> => ({ ok: false, status: 500, json: async () => ({ error: 'boom' }) })))
     render(<RdagentPanel onClose={() => {}} />)
