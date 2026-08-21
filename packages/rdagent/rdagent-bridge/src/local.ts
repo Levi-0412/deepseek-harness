@@ -26,12 +26,21 @@ export interface LocalArtifact {
   size?: number
 }
 
+/** One business-facing metric summary line (IC mean, ICIR, period return...). */
+export interface LocalSummary {
+  label: string
+  value: number
+  fmt: 'pct' | 'num'
+  pass?: boolean
+}
+
 /** One local experiment. */
 export interface LocalExperiment {
   name: string
   runs: LocalRun[]
   artifacts: LocalArtifact[]
   warnings: string[]
+  summary: LocalSummary[]
 }
 
 /** Limits guarding reads against oversized or pathological files. */
@@ -206,6 +215,69 @@ export async function listRunFiles(root: string, exp: string, runId: string): Pr
   return files
 }
 
+/** Business-facing metrics for one experiment, extracted from its metrics JSON:
+ * gated stats (rank IC mean/ICIR/pass) when present, else IC-series mean/ICIR,
+ * else the first numeric series' period value. At most two lines. */
+async function summarizeExperiment(root: string, name: string): Promise<LocalSummary[]> {
+  const metricsDir = path.join(root, name, 'metrics')
+  const files = await readdir(metricsDir).catch(() => [])
+  const summary: LocalSummary[] = []
+  for (const file of files.filter(f => f.endsWith('.json')).slice(0, 5)) {
+    if (summary.length >= 2) break
+    const filePath = path.join(metricsDir, file)
+    const info = await stat(filePath).catch(() => null)
+    if (info === null || info.size > LIMITS.jsonBytes) continue
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(await readFile(filePath, 'utf8'))
+    } catch {
+      continue
+    }
+    if (typeof parsed !== 'object' || parsed === null) continue
+    const doc = parsed as Record<string, unknown>
+
+    // Gated stats (exp1/exp3 style): rank_ic_mean / icir / G*_PASS.
+    const gates = doc.gates
+    if (typeof gates === 'object' && gates !== null) {
+      const g = gates as Record<string, unknown>
+      const icMean = typeof g.rank_ic_mean === 'number' ? g.rank_ic_mean : null
+      const icir = typeof g.icir === 'number' ? g.icir : null
+      if (icMean !== null) {
+        summary.push({ label: 'IC 均值', value: icMean, fmt: 'num' })
+        if (icir !== null) summary.push({ label: 'ICIR', value: icir, fmt: 'num' })
+        break
+      }
+    }
+
+    // IC-series stats (exp1s style): mean / IR of the series.
+    const series = extractSeries(doc)
+    const icSeries = series.find(s => s.label.toLowerCase().includes('ic'))
+    if (icSeries !== undefined) {
+      const values = icSeries.values.filter(Number.isFinite)
+      if (values.length > 1) {
+        const mean = values.reduce((a, b) => a + b, 0) / values.length
+        const variance = values.reduce((a, b) => a + (b - mean) ** 2, 0) / values.length
+        summary.push({ label: 'IC 均值', value: mean, fmt: 'num' })
+        if (variance > 0) summary.push({ label: 'ICIR', value: mean / Math.sqrt(variance), fmt: 'num' })
+        break
+      }
+    }
+
+    // First numeric series' period value (exp2 style): last value as a return.
+    if (series.length > 0) {
+      const firstSeries = series[0]
+      if (firstSeries !== undefined) {
+        const last = firstSeries.values[firstSeries.values.length - 1]
+        if (last !== undefined && Number.isFinite(last)) {
+          summary.push({ label: `${firstSeries.label} 期末`, value: last, fmt: 'pct' })
+          break
+        }
+      }
+    }
+  }
+  return summary
+}
+
 /** List one experiment directory: manifest runs (when present) + artifacts. */
 async function scanExperiment(root: string, name: string, depth: number): Promise<LocalExperiment | null> {
   const dir = path.join(root, name)
@@ -266,7 +338,7 @@ async function scanExperiment(root: string, name: string, depth: number): Promis
     }
   }
 
-  return { name, runs, artifacts, warnings }
+  return { name, runs, artifacts, warnings, summary: await summarizeExperiment(root, name) }
 }
 
 /** mtime-keyed tree cache: root plus per-experiment directory mtimes must all

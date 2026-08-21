@@ -133,6 +133,23 @@
   flex: 1;
 }
 
+.groupSummary {
+  display: flex;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+  flex-shrink: 0;
+}
+
+.summaryPass {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.summaryFail {
+  color: var(--dsw-alias-state-error-primary);
+}
+
 .traceActive {
   background: var(--dsw-alias-label-primary);
   color: var(--dsw-alias-label-primary-foreground);
