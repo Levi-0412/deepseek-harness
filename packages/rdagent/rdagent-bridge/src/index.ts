@@ -272,6 +272,7 @@ export function apply(ctx: Context, config: Config): () => void {
           runs: e.runs,
           artifacts: e.artifacts,
           warnings: e.warnings,
+          summary: e.summary,
         }))
         sendJson(res, 200, { experiments: [...rdagentGroups, ...localGroups] })
         return

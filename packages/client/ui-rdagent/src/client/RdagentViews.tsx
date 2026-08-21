@@ -25,6 +25,14 @@ export interface ExperimentArtifact {
   size?: number
 }
 
+/** One business-facing metric summary line. */
+export interface LocalSummary {
+  label: string
+  value: number
+  fmt: 'pct' | 'num'
+  pass?: boolean
+}
+
 /** One experiment group in the unified tree (rdagent or local source). */
 export interface ExperimentGroup {
   name: string
@@ -32,6 +40,7 @@ export interface ExperimentGroup {
   runs: ExperimentRun[]
   artifacts: ExperimentArtifact[]
   warnings?: string[]
+  summary?: LocalSummary[]
 }
 
 /** Unified tree response from /experiments. */

@@ -86,6 +86,15 @@ function formatTime(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString()
 }
 
+/** Business-facing label for a local run row: design variant tag + seed. */
+function localRunLabel(r: { meta?: Record<string, unknown> }): string {
+  const meta = r.meta ?? {}
+  const tag = typeof meta.tag === 'string' ? meta.tag : ''
+  const seed = typeof meta.seed === 'number' ? ` · seed ${meta.seed}` : ''
+  const epochs = typeof meta.epochs === 'number' ? ` · ${meta.epochs} epochs` : ''
+  return tag !== '' ? `${tag}${seed}${epochs}` : ''
+}
+
 /** Pretty-print a dotted metric name (e.g. `..._with_cost.annualized_return` → `annualized return`). */
 function metricLabel(key: string): string {
   const parts = key.split('.')
@@ -499,7 +508,17 @@ export function RdagentPanel({ onClose }: { onClose: () => void }) {
                     <span className={styles.groupCaret}>{expanded.has(g.name) ? '▾' : '▸'}</span>
                     <span className={styles.sourceBadge}>{g.source === 'rdagent' ? 'RD' : '本地'}</span>
                     <span className={styles.groupName}>{g.name}</span>
-                    <span className={styles.muted}>{g.runs.length} 运行</span>
+                    <span className={styles.groupSummary}>
+                      {g.summary !== undefined && g.summary.map(s => (
+                        <span
+                          key={s.label}
+                          className={s.pass === true ? styles.summaryPass : s.pass === false ? styles.summaryFail : undefined}
+                        >
+                          {s.label} {s.fmt === 'pct' ? `${(s.value * 100).toFixed(2)}%` : s.value.toFixed(4)}
+                        </span>
+                      ))}
+                      <span className={styles.muted}>{g.runs.length} 运行</span>
+                    </span>
                   </button>
                   {expanded.has(g.name) && (
                     <ul className={styles.traceList}>
@@ -519,7 +538,9 @@ export function RdagentPanel({ onClose }: { onClose: () => void }) {
                             >
                               <span className={styles.traceId}>{r.id}</span>
                               <span className={styles.muted}>
-                                {r.startedAt !== undefined ? formatTime(r.startedAt) : ''}
+                                {g.source === 'local'
+                                  ? localRunLabel(r)
+                                  : r.startedAt !== undefined ? formatTime(r.startedAt) : ''}
                                 {r.durationSec !== undefined ? ` · ${Math.round(r.durationSec / 60)} 分钟` : ''}
                               </span>
                             </button>
