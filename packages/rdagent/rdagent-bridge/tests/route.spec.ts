@@ -13,6 +13,7 @@ import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import type { ModuleLoaderV2 } from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import HttpServer from '@deepseek-ai/dsh-host-webserver'
 import * as Bridge from '../src/index.ts'
@@ -55,13 +56,22 @@ async function loadComposition(port = 0, withLocalRoot = false): Promise<Context
     ['@deepseek-ai/dsh-host-webserver', HttpServer],
     ['@deepseek-ai/dsh-rdagent-bridge', Bridge],
   ])
-  context.loader.internal = {
+  // Only `import` is exercised: this composition resolves plugin packages by
+  // bare name through the map. The remaining members satisfy the Node loader
+  // interface and fail loud if a future composition reaches them.
+  const loaderInternal: ModuleLoaderV2 = {
     version: 'v2',
+    loadCache: new Map(),
     async import(specifier: string) {
       if (!modules.has(specifier)) throw new Error(`unexpected Loader import: ${specifier}`)
       return modules.get(specifier)
     },
-  } as unknown as NonNullable<typeof context.loader.internal>
+    register: () => { throw new Error('loader.register is unused in this composition') },
+    getOrCreateModuleJob: () => { throw new Error('loader.getOrCreateModuleJob is unused in this composition') },
+    resolveSync: () => { throw new Error('loader.resolveSync is unused in this composition') },
+    load: () => { throw new Error('loader.load is unused in this composition') },
+  }
+  context.loader.internal = loaderInternal
   await context.loader.create({
     name: 'cordis:include',
     config: { path: pathToFileURL(configPath).href },

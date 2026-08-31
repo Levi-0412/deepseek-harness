@@ -4,13 +4,15 @@
  * drawer rendering the trace browser. The panel reads `dsh-rdagent-bridge`
  * over same-origin fetch; no store, no projections, no event listeners.
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+// Type-only: pulls the renderer's Context merge (ctx.slots).
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the ui-sidebar SlotMap merge (the footer action entry).
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { RdagentTrigger } from './RdagentTrigger.tsx'
-import { en, zh, type RdagentKey } from './locales.ts'
+import { en, NS, zh, type RdagentKey } from './locales.ts'
 
 export { RdagentTrigger } from './RdagentTrigger.tsx'
 export { RdagentPanel } from './RdagentPanel.tsx'
@@ -22,9 +24,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     rdagent: RdagentKey
   }
 }
-
-/** Dictionary namespace owned by this plugin. */
-const NS = 'rdagent'
 
 /** Required services: slots for the footer action, locale for copy. */
 export const inject = ['slots', 'locale']
@@ -41,6 +40,7 @@ export function apply(ctx: ClientContext): void {
       name: 'sidebar.footer.action',
       id: 'rdagent',
       order: 10,
+      locale: NS,
       // Locale-following thunk: the shell resolves action labels at read time.
       label: () => ctx.locale.bind(NS)('label'),
     }, RdagentTrigger),

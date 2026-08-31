@@ -52,7 +52,11 @@ export const LIMITS = {
   scanDepth: 3,
 } as const
 
-/** Decode a buffer with BOM sniffing, strict UTF-8, then GB18030 fallback. */
+/**
+ * Decode a buffer with BOM sniffing, strict UTF-8, then GB18030 fallback.
+ * @param buffer - raw file bytes.
+ * @returns the decoded text.
+ */
 export function decodeText(buffer: Buffer): string {
   if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
     return new TextDecoder('utf-16le').decode(buffer)
@@ -72,7 +76,11 @@ export function decodeText(buffer: Buffer): string {
   }
 }
 
-/** Parse a manifest that is either standard JSON or JSON Lines (header + run rows). */
+/**
+ * Parse a manifest that is either standard JSON or JSON Lines (header + run rows).
+ * @param text - decoded manifest text.
+ * @returns the header record, the run rows, and warnings for skipped rows.
+ */
 export function parseManifest(text: string): { header: Record<string, unknown>; runs: Record<string, unknown>[]; warnings: string[] } {
   const warnings: string[] = []
   const header: Record<string, unknown> = {}
@@ -127,7 +135,11 @@ function normalizeDateKey(key: string): string | null {
   return null
 }
 
-/** Shape-dispatched series extraction from one parsed JSON document. */
+/**
+ * Shape-dispatched series extraction from one parsed JSON document.
+ * @param content - parsed metrics document.
+ * @returns the recognizable series, each with its label, date axis, and values.
+ */
 export function extractSeries(content: Record<string, unknown>): { label: string; dates: string[]; values: number[] }[] {
   const out: { label: string; dates: string[]; values: number[] }[] = []
 
@@ -172,7 +184,11 @@ export function extractSeries(content: Record<string, unknown>): { label: string
   return out
 }
 
-/** Classify an artifact by name/extension. */
+/**
+ * Classify an artifact by name/extension.
+ * @param name - the file name (path suffix allowed).
+ * @returns the artifact kind shown in the panel.
+ */
 export function artifactKind(name: string): LocalArtifact['kind'] {
   const lower = name.toLowerCase()
   if (lower.endsWith('.json')) return lower.includes('band') || lower.includes('ic') || lower.includes('series') ? 'series' : 'table'
@@ -184,7 +200,12 @@ export function artifactKind(name: string): LocalArtifact['kind'] {
   return 'binary'
 }
 
-/** Read a file's content under the size limit (text kinds), else null. */
+/**
+ * Read a file's content under the size limit (text kinds), else null.
+ * @param filePath - absolute path of the file to read.
+ * @param limit - maximum accepted byte size.
+ * @returns the decoded text, or null when the file exceeds the limit.
+ */
 export async function readTextFile(filePath: string, limit = LIMITS.textBytes): Promise<string | null> {
   const info = await stat(filePath)
   if (info.size > limit) return null
@@ -199,7 +220,13 @@ export interface RunFile {
   kind: LocalArtifact['kind']
 }
 
-/** List the files inside one run directory (recursive, size-guarded). */
+/**
+ * List the files inside one run directory (recursive, size-guarded).
+ * @param root - experiment root directory.
+ * @param exp - experiment directory name.
+ * @param runId - run directory name under `<exp>/runs/`.
+ * @returns the run's files, path-sorted, empty when the directory is unreadable.
+ */
 export async function listRunFiles(root: string, exp: string, runId: string): Promise<RunFile[]> {
   const runDir = path.join(root, exp, 'runs', runId)
   const entries = await readdir(runDir, { withFileTypes: true, recursive: true }).catch(() => [])
@@ -345,7 +372,11 @@ async function scanExperiment(root: string, name: string, depth: number): Promis
  * match for a hit (an appended manifest row changes the experiment dir mtime). */
 const treeCache = new Map<string, { mtimeMs: number; dirMtimes: number[]; data: { experiments: LocalExperiment[] } }>()
 
-/** Build the local experiment tree under `experimentsRoot` (mtime-cached). */
+/**
+ * Build the local experiment tree under `experimentsRoot` (mtime-cached).
+ * @param root - absolute experiment root directory.
+ * @returns every readable experiment, in directory order, capped by {@link LIMITS}.
+ */
 export async function buildLocalTree(root: string): Promise<{ experiments: LocalExperiment[] }> {
   const rootInfo = await stat(root)
   const entries = await readdir(root, { withFileTypes: true })

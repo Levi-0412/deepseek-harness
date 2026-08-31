@@ -370,7 +370,8 @@
     - id: ui-goal
       name: '@deepseek-ai/dsh-client-ui-goal'
 
-    # RD-Agent traces panel: settings.section over the rdagent-bridge routes.
+    # RD-Agent traces drawer: one sidebar footer action over the
+    # rdagent-bridge routes.
     - id: ui-rdagent
       name: '@deepseek-ai/dsh-client-ui-rdagent'
 

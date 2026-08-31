@@ -6,6 +6,7 @@
  * loop-grouped timeline, with 30s polling while a trace is selected.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   EquityView,
   LocalRunView,
@@ -14,6 +15,7 @@ import {
   type ExperimentGroup,
   type LocalExperimentDetail,
 } from './RdagentViews.tsx'
+import { NS } from './locales.ts'
 import styles from './RdagentPanel.module.css'
 
 /** One trace directory under the bridge's logDir. */
@@ -178,7 +180,7 @@ const HEADLINE_KEYS = [
   '1day.excess_return_with_cost.mean',
 ]
 
-function MetricsView({ messages }: { messages: TraceMessage[] }) {
+function MetricsView({ messages, t }: { messages: TraceMessage[]; t: TranslateNS<typeof NS> }) {
   const exp = useMemo(() => {
     for (const m of messages) {
       if (!m.tag.includes('runner result')) continue
@@ -211,23 +213,28 @@ function MetricsView({ messages }: { messages: TraceMessage[] }) {
 
   return (
     <section className={styles.card}>
-      <h3 className={styles.cardTitle}>回测指标</h3>
+      <h3 className={styles.cardTitle}>{t('metrics.title')}</h3>
       <div className={styles.badgeGrid}>
         {headline.map(h => (
           <div key={h.key} className={`${styles.badge} ${h.better ? styles.badgeBetter : h.worse ? styles.badgeWorse : ''}`}>
             <span className={styles.badgeValue}>{fmtNum(h.cur)}</span>
             <span className={styles.badgeLabel}>{h.label}</span>
             <span className={styles.badgeMeta}>
-              baseline {fmtNum(h.base)} · {h.scope}
+              {t('metrics.badge', { value: fmtNum(h.base), scope: h.scope })}
             </span>
           </div>
         ))}
       </div>
       <details className={styles.tableWrap}>
-        <summary>全部指标对比</summary>
+        <summary>{t('metrics.all')}</summary>
         <table className={styles.metricsTable}>
           <thead>
-            <tr><th>指标</th><th>范围</th><th>当前</th><th>Baseline</th></tr>
+            <tr>
+              <th>{t('metrics.column.metric')}</th>
+              <th>{t('metrics.column.scope')}</th>
+              <th>{t('metrics.column.current')}</th>
+              <th>{t('metrics.column.baseline')}</th>
+            </tr>
           </thead>
           <tbody>
             {table.map(r => (
@@ -245,7 +252,7 @@ function MetricsView({ messages }: { messages: TraceMessage[] }) {
   )
 }
 
-function CodeView({ messages }: { messages: TraceMessage[] }) {
+function CodeView({ messages, t }: { messages: TraceMessage[]; t: TranslateNS<typeof NS> }) {
   const files = useMemo(() => {
     const out: { tag: string; files: Record<string, string> }[] = []
     for (const m of messages) {
@@ -259,7 +266,7 @@ function CodeView({ messages }: { messages: TraceMessage[] }) {
   if (files.length === 0) return null
   return (
     <section className={styles.card}>
-      <h3 className={styles.cardTitle}>因子实现代码</h3>
+      <h3 className={styles.cardTitle}>{t('code.title')}</h3>
       {files.map((f, i) => (
         <div key={i} className={styles.codeBlock}>
           <div className={styles.codeHeader}>
@@ -278,7 +285,7 @@ function CodeView({ messages }: { messages: TraceMessage[] }) {
   )
 }
 
-function FeedbackView({ messages }: { messages: TraceMessage[] }) {
+function FeedbackView({ messages, t }: { messages: TraceMessage[]; t: TranslateNS<typeof NS> }) {
   const rounds = useMemo(() => {
     const out: { tag: string; list: FeedbackRecord[] }[] = []
     for (const m of messages) {
@@ -291,32 +298,32 @@ function FeedbackView({ messages }: { messages: TraceMessage[] }) {
   if (rounds.length === 0) return null
   return (
     <section className={styles.card}>
-      <h3 className={styles.cardTitle}>实现评估反馈</h3>
+      <h3 className={styles.cardTitle}>{t('feedback.title')}</h3>
       {rounds.map((r, i) => (
         <details key={`${r.tag}-${i}`} open={i === 0}>
           <summary>
-            <code>{r.tag}</code> · {r.list.length} 个因子
+            <code>{r.tag}</code> · {t('feedback.count', { count: r.list.length })}
           </summary>
           <div className={styles.feedbackGrid}>
             {r.list.map((f, j) => (
               <div key={j} className={`${styles.feedback} ${f.final_decision ? styles.feedbackPass : styles.feedbackFail}`}>
                 <div className={styles.feedbackHeader}>
                   <span className={f.final_decision ? styles.verdictPass : styles.verdictFail}>
-                    {f.final_decision ? '通过' : '未通过'}
+                    {f.final_decision ? t('feedback.pass') : t('feedback.fail')}
                   </span>
                   {f.value_generated_flag !== undefined && (
-                    <span className={styles.muted}>值生成 {String(f.value_generated_flag)}</span>
+                    <span className={styles.muted}>{t('feedback.valueGenerated', { value: String(f.value_generated_flag) })}</span>
                   )}
                 </div>
                 {f.final_feedback !== undefined && <p className={styles.feedbackText}>{f.final_feedback}</p>}
                 {f.execution_feedback !== undefined && (
-                  <details><summary>执行反馈</summary><pre className={styles.feedbackPre}>{f.execution_feedback}</pre></details>
+                  <details><summary>{t('feedback.execution')}</summary><pre className={styles.feedbackPre}>{f.execution_feedback}</pre></details>
                 )}
                 {f.code_feedback !== undefined && (
-                  <details><summary>代码批评</summary><pre className={styles.feedbackPre}>{f.code_feedback}</pre></details>
+                  <details><summary>{t('feedback.code')}</summary><pre className={styles.feedbackPre}>{f.code_feedback}</pre></details>
                 )}
                 {f.value_feedback !== undefined && (
-                  <details><summary>值反馈</summary><pre className={styles.feedbackPre}>{f.value_feedback}</pre></details>
+                  <details><summary>{t('feedback.value')}</summary><pre className={styles.feedbackPre}>{f.value_feedback}</pre></details>
                 )}
               </div>
             ))}
@@ -327,31 +334,35 @@ function FeedbackView({ messages }: { messages: TraceMessage[] }) {
   )
 }
 
-function TimelineView({ messages, filter }: { messages: TraceMessage[]; filter: string }) {
+function TimelineView({ messages, filter, t }: {
+  messages: TraceMessage[]
+  filter: string
+  t: TranslateNS<typeof NS>
+}) {
   const groups = useMemo(() => {
     const map = new Map<string, TraceMessage[]>()
     for (const m of messages) {
       if (filter !== '' && !m.tag.includes(filter)) continue
       const loop = /Loop_(\d+)/.exec(m.tag)
       const step = /(?:\.|^)(direct_exp_gen|coding|running|feedback|record)/.exec(m.tag)
-      const key = loop !== null ? `Loop ${loop[1]} · ${step?.[1] ?? 'misc'}` : '初始化'
+      const key = loop !== null ? `Loop ${loop[1]} · ${step?.[1] ?? 'misc'}` : t('timeline.initial')
       const list = map.get(key)
       if (list !== undefined) list.push(m)
       else map.set(key, [m])
     }
     return [...map.entries()]
-  }, [messages, filter])
+  }, [messages, filter, t])
   if (groups.length === 0) return null
   return (
     <section className={styles.card}>
-      <h3 className={styles.cardTitle}>流程时间线</h3>
+      <h3 className={styles.cardTitle}>{t('timeline.title')}</h3>
       <div className={styles.timeline}>
         {groups.map(([key, list]) => (
           <details key={key} open={key.startsWith('Loop 0')} className={styles.timelineGroup}>
             <summary className={styles.timelineHeader}>
               <span className={styles.timelineDot} />
               <span>{key}</span>
-              <span className={styles.muted}>{list.length} 条</span>
+              <span className={styles.muted}>{t('timeline.count', { count: list.length })}</span>
             </summary>
             {list.map((m, i) => (
               <div key={`${m.timestamp}-${i}`} className={styles.message}>
@@ -379,11 +390,19 @@ function ContentView({ content }: { content: unknown }) {
   return <pre className={styles.json}>{JSON.stringify(content, null, 2)}</pre>
 }
 
+/** Full props for the RD-Agent trace panel content. */
+export interface RdagentPanelProps {
+  /** Close callback owned by the trigger that hosts the drawer. */
+  onClose: () => void
+  /** The `rdagent` dictionary translate seat, threaded from the trigger. */
+  t: TranslateNS<typeof NS>
+}
+
 /**
  * The RD-Agent trace panel content (rendered inside the drawer).
- * @param props - close callback owned by the trigger that hosts the drawer.
+ * @param props - close callback owned by the trigger, plus its `rdagent` copy seat.
  */
-export function RdagentPanel({ onClose }: { onClose: () => void }) {
+export function RdagentPanel({ onClose, t }: RdagentPanelProps) {
   const [groups, setGroups] = useState<ExperimentGroup[] | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [selection, setSelection] = useState<Selection>(null)
@@ -481,17 +500,19 @@ export function RdagentPanel({ onClose }: { onClose: () => void }) {
   return (
     <div className={styles.panel}>
       <div className={styles.toolbar}>
-        <span className={styles.title}>RD-Agent Traces</span>
-        <span className={styles.muted}>{loading ? '加载中…' : data !== null ? `${data.count} 条消息` : ''}</span>
-        <button type="button" onClick={onClose} className={styles.close} aria-label="关闭">✕</button>
+        <span className={styles.title}>{t('title.traces')}</span>
+        <span className={styles.muted}>
+          {loading ? t('loading.trace') : data !== null ? t('messages.count', { count: data.count }) : ''}
+        </span>
+        <button type="button" onClick={onClose} className={styles.close} aria-label={t('close')}>✕</button>
       </div>
-      {error !== '' && <div className={styles.error}>bridge error: {error}</div>}
+      {error !== '' && <div className={styles.error}>{t('error.bridge', { message: error })}</div>}
       <div className={styles.body}>
         <aside className={styles.side}>
           {groups === null ? (
-            <div className={styles.muted}>loading experiments…</div>
+            <div className={styles.muted}>{t('experiments.loading')}</div>
           ) : groups.length === 0 ? (
-            <div className={styles.muted}>no experiments found</div>
+            <div className={styles.muted}>{t('experiments.empty')}</div>
           ) : (
             <ul className={styles.traceList}>
               {groups.map(g => (
@@ -506,7 +527,7 @@ export function RdagentPanel({ onClose }: { onClose: () => void }) {
                     }}
                   >
                     <span className={styles.groupCaret}>{expanded.has(g.name) ? '▾' : '▸'}</span>
-                    <span className={styles.sourceBadge}>{g.source === 'rdagent' ? 'RD' : '本地'}</span>
+                    <span className={styles.sourceBadge}>{g.source === 'rdagent' ? t('source.rdagent') : t('source.local')}</span>
                     <span className={styles.groupName}>{g.name}</span>
                     <span className={styles.groupSummary}>
                       {g.summary !== undefined && g.summary.map(s => (
@@ -517,7 +538,7 @@ export function RdagentPanel({ onClose }: { onClose: () => void }) {
                           {s.label} {s.fmt === 'pct' ? `${(s.value * 100).toFixed(2)}%` : s.value.toFixed(4)}
                         </span>
                       ))}
-                      <span className={styles.muted}>{g.runs.length} 运行</span>
+                      <span className={styles.muted}>{t('runs.count', { count: g.runs.length })}</span>
                     </span>
                   </button>
                   {expanded.has(g.name) && (
@@ -541,7 +562,7 @@ export function RdagentPanel({ onClose }: { onClose: () => void }) {
                                 {g.source === 'local'
                                   ? localRunLabel(r)
                                   : r.startedAt !== undefined ? formatTime(r.startedAt) : ''}
-                                {r.durationSec !== undefined ? ` · ${Math.round(r.durationSec / 60)} 分钟` : ''}
+                                {r.durationSec !== undefined ? t('duration.minutes', { count: Math.round(r.durationSec / 60) }) : ''}
                               </span>
                             </button>
                           </li>
@@ -556,40 +577,40 @@ export function RdagentPanel({ onClose }: { onClose: () => void }) {
         </aside>
         <main className={styles.stream}>
           {selection === null ? (
-            <div className={styles.muted}>选择左侧实验查看记录</div>
+            <div className={styles.muted}>{t('experiments.select')}</div>
           ) : selection.source === 'local' ? (
             localDetail === null ? (
-              <div className={styles.muted}>{loading ? 'loading…' : 'local detail unavailable'}</div>
+              <div className={styles.muted}>{loading ? t('loading.short') : t('local.detailUnavailable')}</div>
             ) : (
-              <LocalRunView detail={localDetail} />
+              <LocalRunView detail={localDetail} t={t} />
             )
           ) : data === null ? (
-            <div className={styles.muted}>loading…</div>
+            <div className={styles.muted}>{t('loading.short')}</div>
           ) : (
             <>
               <div className={styles.filterRow}>
                 <div className={styles.viewSwitch}>
-                  <button type="button" className={view === 'overview' ? styles.switchActive : styles.switch} onClick={() => { setView('overview') }}>总览</button>
-                  <button type="button" className={view === 'equity' ? styles.switchActive : styles.switch} onClick={() => { setView('equity') }}>账户轨迹</button>
-                  <button type="button" className={view === 'stream' ? styles.switchActive : styles.switch} onClick={() => { setView('stream') }}>消息流</button>
+                  <button type="button" className={view === 'overview' ? styles.switchActive : styles.switch} onClick={() => { setView('overview') }}>{t('view.overview')}</button>
+                  <button type="button" className={view === 'equity' ? styles.switchActive : styles.switch} onClick={() => { setView('equity') }}>{t('view.equity')}</button>
+                  <button type="button" className={view === 'stream' ? styles.switchActive : styles.switch} onClick={() => { setView('stream') }}>{t('view.stream')}</button>
                 </div>
                 <input
                   className={styles.filter}
-                  placeholder="filter tag…"
+                  placeholder={t('filter.placeholder')}
                   value={tagFilter}
                   onChange={(e) => { setTagFilter(e.target.value) }}
                 />
               </div>
               {view === 'overview' ? (
                 <>
-                  <SummaryView messages={data.messages} />
-                  <MetricsView messages={data.messages} />
-                  <FeedbackView messages={data.messages} />
-                  <CodeView messages={data.messages} />
-                  <TimelineView messages={data.messages} filter={tagFilter} />
+                  <SummaryView messages={data.messages} t={t} />
+                  <MetricsView messages={data.messages} t={t} />
+                  <FeedbackView messages={data.messages} t={t} />
+                  <CodeView messages={data.messages} t={t} />
+                  <TimelineView messages={data.messages} filter={tagFilter} t={t} />
                 </>
               ) : view === 'equity' ? (
-                <EquityView messages={data.messages} />
+                <EquityView messages={data.messages} t={t} />
               ) : (
                 data.messages
                   .filter(m => tagFilter === '' || m.tag.includes(tagFilter))
