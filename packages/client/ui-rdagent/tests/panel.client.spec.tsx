@@ -5,8 +5,34 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { RdagentPanel, type TraceData } from '../src/client/RdagentPanel.tsx'
-import { RdagentTrigger } from '../src/client/RdagentTrigger.tsx'
+import { RdagentPanel, type RdagentPanelProps, type TraceData } from '../src/client/RdagentPanel.tsx'
+import { RdagentTrigger, type RdagentTriggerProps } from '../src/client/RdagentTrigger.tsx'
+import { en } from '../src/client/locales.ts'
+
+/**
+ * The `rdagent` copy seat over the shipped English dictionary: assertions name
+ * the dictionary key, so a wording change fails here instead of passing
+ * against a duplicated literal. `{name}` placeholders resolve as the locale
+ * runtime resolves them.
+ */
+const t = (key: keyof typeof en, params?: Record<string, unknown>): string => {
+  const template = en[key]
+  if (params === undefined) return template
+  return template.replace(/\{(\w+)\}/g, (match, name: string) => (name in params ? String(params[name]) : match))
+}
+
+/**
+ * Render the panel with the framework seats it does not read omitted; the cast
+ * stands in for the slot registration that supplies the seat in production.
+ */
+function renderPanel(): void {
+  render(<RdagentPanel {...({ onClose: () => {}, t } as unknown as RdagentPanelProps)} />)
+}
+
+/** Render the footer action in its wide column, with the drawer closed. */
+function renderTrigger(): void {
+  render(<RdagentTrigger {...({ wide: true, t } as unknown as RdagentTriggerProps)} />)
+}
 
 afterEach(() => {
   cleanup()
@@ -192,62 +218,62 @@ describe('RdagentPanel', () => {
     fireEvent.click(screen.getByText('量价因子组'))
     await waitFor(() => { expect(screen.getByText('t1')).toBeTruthy() })
     fireEvent.click(screen.getByText('t1'))
-    await waitFor(() => { expect(screen.getByText('回测指标')).toBeTruthy() })
+    await waitFor(() => { expect(screen.getByText(t('metrics.title'))).toBeTruthy() })
   }
 
   it('renders the two-level experiment tree and structured views after selecting a trace', async () => {
     stubBridge()
-    render(<RdagentPanel onClose={() => {}} />)
+    renderPanel()
 
     // first level: experiment groups with source badges
     await waitFor(() => { expect(screen.getByText('量价因子组')).toBeTruthy() })
     expect(screen.getByText('exp2')).toBeTruthy()
-    expect(screen.getAllByText('1 运行').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(t('runs.count', { count: 1 })).length).toBeGreaterThan(0)
 
     // expand the group, then select the trace
     fireEvent.click(screen.getByText('量价因子组'))
     await waitFor(() => { expect(screen.getByText('t1')).toBeTruthy() })
     fireEvent.click(screen.getByText('t1'))
 
-    await waitFor(() => { expect(screen.getByText('回测指标')).toBeTruthy() })
-    expect(screen.getByText('因子摘要')).toBeTruthy()
+    await waitFor(() => { expect(screen.getByText(t('metrics.title'))).toBeTruthy() })
+    expect(screen.getByText(t('summary.title'))).toBeTruthy()
     expect(screen.getByText('momentum_20d')).toBeTruthy()
     expect(screen.getByText('volume_ratio_20d')).toBeTruthy()
     expect(screen.getByText('LightGBM')).toBeTruthy()
-    expect(screen.getByText('训练 l2 0.9324')).toBeTruthy()
-    expect(screen.getByText('验证 l2 0.9824')).toBeTruthy()
+    expect(screen.getByText(t('summary.train', { value: '0.9324' }))).toBeTruthy()
+    expect(screen.getByText(t('summary.valid', { value: '0.9824' }))).toBeTruthy()
     // the hypothesis renders in the summary strip
     expect(screen.getByText('Momentum factors predict returns')).toBeTruthy()
     // the standalone hypotheses view was folded into the summary strip
     expect(screen.queryByText('研究假设')).toBeNull()
-    expect(screen.getByText('实现评估反馈')).toBeTruthy()
-    expect(screen.getByText('因子实现代码')).toBeTruthy()
-    expect(screen.getByText('流程时间线')).toBeTruthy()
+    expect(screen.getByText(t('feedback.title'))).toBeTruthy()
+    expect(screen.getByText(t('code.title'))).toBeTruthy()
+    expect(screen.getByText(t('timeline.title'))).toBeTruthy()
     // metric badge values rendered (badge + table both show the value)
     expect(screen.getAllByText('0.1800').length).toBeGreaterThan(0)
   })
 
   it('renders the account-curve view with chart and stats', async () => {
     stubBridge()
-    render(<RdagentPanel onClose={() => {}} />)
+    renderPanel()
     await selectTrace()
 
-    fireEvent.click(screen.getByText('账户轨迹'))
-    expect(await screen.findByText('期末累计收益')).toBeTruthy()
+    fireEvent.click(screen.getByText(t('view.equity')))
+    expect(await screen.findByText(t('equity.final'))).toBeTruthy()
     expect(screen.getByText('2.50%')).toBeTruthy() // (102.5M / 100M) - 1
-    expect(screen.getByText('最大回撤')).toBeTruthy()
-    expect(screen.getByRole('img', { name: '账户累计收益与基准累计收益曲线' })).toBeTruthy()
-    expect(screen.getByText('组合 2.50%')).toBeTruthy()
-    expect(screen.getByText('基准累计收益')).toBeTruthy()
+    expect(screen.getByText(t('equity.mdd'))).toBeTruthy()
+    expect(screen.getByRole('img', { name: t('equity.chart.aria') })).toBeTruthy()
+    expect(screen.getByText(t('equity.legend.account', { value: '2.50%' }))).toBeTruthy()
+    expect(screen.getByText(t('equity.bench'))).toBeTruthy()
     expect(screen.getByText('1.71%')).toBeTruthy() // (1.0 * 1.005 * 1.012) - 1
   })
 
   it('renders the flattened baseline comparison from the runner result', async () => {
     stubBridge()
-    render(<RdagentPanel onClose={() => {}} />)
+    renderPanel()
     await selectTrace()
     // headline badge meta shows the baseline IR from based_experiments[0]
-    expect(screen.getByText(/baseline 2\.300/)).toBeTruthy()
+    expect(screen.getByText(t('metrics.badge', { value: '2.300', scope: 'excess return with cost' }))).toBeTruthy()
   })
 
   it('renders local experiment detail without touching /rdagent/trace', async () => {
@@ -282,14 +308,14 @@ describe('RdagentPanel', () => {
       }
       return { ok: false, status: 404, json: async () => ({ error: 'not found' }) }
     }))
-    render(<RdagentPanel onClose={() => {}} />)
+    renderPanel()
 
     await waitFor(() => { expect(screen.getByText('exp2')).toBeTruthy() })
     fireEvent.click(screen.getByText('exp2'))
 
     // local detail view renders series chart, artifacts and reports
-    expect(await screen.findByText('指标序列')).toBeTruthy()
-    expect(screen.getByRole('img', { name: '序列曲线' })).toBeTruthy()
+    expect(await screen.findByText(t('local.series.title'))).toBeTruthy()
+    expect(screen.getByRole('img', { name: t('series.chart.aria') })).toBeTruthy()
     expect(screen.getByText('login success!')).toBeTruthy()
     expect(screen.getByText(/daily_series\.json/)).toBeTruthy()
     // never hits the rdagent trace endpoint for a local selection
@@ -331,7 +357,7 @@ describe('RdagentPanel', () => {
       }
       return { ok: false, status: 404, json: async () => ({ error: 'not found' }) }
     }))
-    render(<RdagentPanel onClose={() => {}} />)
+    renderPanel()
 
     await waitFor(() => { expect(screen.getByText('exp1s')).toBeTruthy() })
     fireEvent.click(screen.getByText('exp1s'))
@@ -339,25 +365,25 @@ describe('RdagentPanel', () => {
     fireEvent.click(screen.getByText('F5c_s2023'))
 
     // run card renders the run meta and file chips
-    expect(await screen.findByText(/运行 F5c_s2023/)).toBeTruthy()
+    expect(await screen.findByText(t('local.run.title', { id: 'F5c_s2023' }))).toBeTruthy()
     expect(screen.getByText('2023')).toBeTruthy()
     expect(screen.getByText(/model0\/model\.pth/)).toBeTruthy()
   })
 
   it('surfaces bridge errors', async () => {
     vi.stubGlobal('fetch', vi.fn(async (): Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }> => ({ ok: false, status: 500, json: async () => ({ error: 'boom' }) })))
-    render(<RdagentPanel onClose={() => {}} />)
-    await waitFor(() => { expect(screen.getByText(/bridge error: HTTP 500: boom/)).toBeTruthy() })
+    renderPanel()
+    await waitFor(() => { expect(screen.getByText(t('error.bridge', { message: 'HTTP 500: boom' }))).toBeTruthy() })
   })
 })
 
 describe('RdagentTrigger', () => {
   it('opens the drawer on click and closes on Escape', async () => {
     stubBridge()
-    render(<RdagentTrigger wide />)
+    renderTrigger()
 
-    fireEvent.click(screen.getByTitle('RD-Agent Traces'))
-    await waitFor(() => { expect(screen.getByRole('dialog', { name: 'RD-Agent Traces' })).toBeTruthy() })
+    fireEvent.click(screen.getByTitle(t('title.traces')))
+    await waitFor(() => { expect(screen.getByRole('dialog', { name: t('title.traces') })).toBeTruthy() })
 
     fireEvent.keyDown(window, { key: 'Escape' })
     await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })

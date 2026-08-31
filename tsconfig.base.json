@@ -151,7 +151,6 @@
       "@deepseek-ai/dsh-host-open-in-app/shared": ["./packages/host/open-in-app/src/shared.ts"],
       "@deepseek-ai/dsh-host-webserver": ["./packages/host/webserver/src"],
       "@deepseek-ai/dsh-rdagent-bridge": ["./packages/rdagent/rdagent-bridge/src"],
-      "@deepseek-ai/dsh-rdagent-bridge/invariant": ["./packages/rdagent/rdagent-bridge/src/invariant.ts"],
       "@deepseek-ai/dsh-host-frontend-static": ["./packages/host/frontend-static/src"],
       "@deepseek-ai/dsh-host-plugin-inventory": ["./packages/host/plugin-inventory/src"],
       "@deepseek-ai/dsh-host-plugin-inventory/types": ["./packages/host/plugin-inventory/src/types.ts"],

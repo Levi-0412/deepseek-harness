@@ -5,6 +5,8 @@
  * functions are pure over the bridge message list and shared with the panel.
  */
 import { useMemo, useState } from 'react'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import { NS } from './locales.ts'
 import styles from './RdagentPanel.module.css'
 import { pickMetrics, type MetricSeries, type TraceMessage } from './RdagentPanel.tsx'
 
@@ -201,7 +203,7 @@ function fmtPct(v: number): string {
 }
 
 /** Summary strip above the metric cards: factors, models, hypothesis, verdicts. */
-export function SummaryView({ messages }: { messages: TraceMessage[] }) {
+export function SummaryView({ messages, t }: { messages: TraceMessage[]; t: TranslateNS<typeof NS> }) {
   const factors = useMemo(() => factorNamesOf(messages), [messages])
   const quantModel = useMemo(() => quantModelOf(messages), [messages])
   const hypothesis = useMemo(() => hypothesisTextOf(messages), [messages])
@@ -210,10 +212,10 @@ export function SummaryView({ messages }: { messages: TraceMessage[] }) {
   if (factors.length === 0 && quantModel === null && hypothesis === null && snapshot === null) return null
   return (
     <section className={styles.card}>
-      <h3 className={styles.cardTitle}>因子摘要</h3>
+      <h3 className={styles.cardTitle}>{t('summary.title')}</h3>
       {factors.length > 0 && (
         <div className={styles.summaryRow}>
-          <span className={styles.summaryLabel}>因子</span>
+          <span className={styles.summaryLabel}>{t('summary.factors')}</span>
           <div className={styles.chipRow}>
             {factors.map(f => <span key={f} className={styles.factorChip}>{f}</span>)}
           </div>
@@ -221,23 +223,27 @@ export function SummaryView({ messages }: { messages: TraceMessage[] }) {
       )}
       {quantModel !== null && (
         <div className={styles.summaryRow}>
-          <span className={styles.summaryLabel}>模型</span>
+          <span className={styles.summaryLabel}>{t('summary.model')}</span>
           <div className={styles.chipRow}>
             <span className={styles.modelChip}>{quantModel.name}</span>
-            {quantModel.train !== null && <span className={styles.modelChip}>训练 l2 {quantModel.train.toFixed(4)}</span>}
-            {quantModel.valid !== null && <span className={styles.modelChip}>验证 l2 {quantModel.valid.toFixed(4)}</span>}
+            {quantModel.train !== null && (
+              <span className={styles.modelChip}>{t('summary.train', { value: quantModel.train.toFixed(4) })}</span>
+            )}
+            {quantModel.valid !== null && (
+              <span className={styles.modelChip}>{t('summary.valid', { value: quantModel.valid.toFixed(4) })}</span>
+            )}
           </div>
         </div>
       )}
       {(verdicts !== null || snapshot !== null) && (
         <div className={styles.summaryRow}>
-          <span className={styles.summaryLabel}>结果</span>
+          <span className={styles.summaryLabel}>{t('summary.result')}</span>
           <span className={styles.summaryText}>
-            {verdicts !== null && `${verdicts.passed}/${verdicts.total} 因子通过`}
+            {verdicts !== null && t('summary.verdicts', { passed: verdicts.passed, total: verdicts.total })}
             {verdicts !== null && snapshot !== null && ' · '}
-            {snapshot !== null && `IR ${snapshot.ir !== null ? snapshot.ir.toFixed(2) : '—'}`}
-            {snapshot !== null && snapshot.annual !== null && ` · 年化 ${fmtPct(snapshot.annual)}`}
-            {snapshot !== null && snapshot.baseIr !== null && `（baseline IR ${snapshot.baseIr.toFixed(2)}）`}
+            {snapshot !== null && t('summary.ir', { value: snapshot.ir !== null ? snapshot.ir.toFixed(2) : '—' })}
+            {snapshot !== null && snapshot.annual !== null && t('summary.annual', { value: fmtPct(snapshot.annual) })}
+            {snapshot !== null && snapshot.baseIr !== null && t('summary.baselineIr', { value: snapshot.baseIr.toFixed(2) })}
           </span>
         </div>
       )}
@@ -264,7 +270,7 @@ function cumulativeReturns(daily: number[]): number[] {
 }
 
 /** Self-contained SVG line chart of the cumulative account vs benchmark returns. */
-export function EquityCurveChart({ rows }: { rows: EquityRow[] }) {
+export function EquityCurveChart({ rows, t }: { rows: EquityRow[]; t: TranslateNS<typeof NS> }) {
   const { accountPoints, benchPoints, grid, last } = useMemo(() => {
     const first = rows[0]
     if (first === undefined) {
@@ -298,7 +304,7 @@ export function EquityCurveChart({ rows }: { rows: EquityRow[] }) {
 
   return (
     <div>
-      <svg viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} className={styles.chart} role="img" aria-label="账户累计收益与基准累计收益曲线">
+      <svg viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} className={styles.chart} role="img" aria-label={t('equity.chart.aria')}>
         {grid.map((g, i) => (
           <g key={i}>
             <line x1={CHART_PAD} x2={CHART_WIDTH - CHART_PAD} y1={g.y} y2={g.y} className={styles.chartGrid} />
@@ -309,15 +315,15 @@ export function EquityCurveChart({ rows }: { rows: EquityRow[] }) {
         <polyline points={accountPoints} className={styles.chartValue} />
       </svg>
       <div className={styles.chartLegend}>
-        <span className={styles.legendValue}>组合 {fmtPct(last.account)}</span>
-        <span className={styles.legendBench}>基准 {fmtPct(last.bench)}</span>
+        <span className={styles.legendValue}>{t('equity.legend.account', { value: fmtPct(last.account) })}</span>
+        <span className={styles.legendBench}>{t('equity.legend.bench', { value: fmtPct(last.bench) })}</span>
       </div>
     </div>
   )
 }
 
 /** Account-curve view: normalized equity chart plus summary badges. */
-export function EquityView({ messages }: { messages: TraceMessage[] }) {
+export function EquityView({ messages, t }: { messages: TraceMessage[]; t: TranslateNS<typeof NS> }) {
   const rows = useMemo(() => equitySeriesOf(messages), [messages])
   const stats = useMemo(() => {
     if (rows === null) return null
@@ -346,24 +352,24 @@ export function EquityView({ messages }: { messages: TraceMessage[] }) {
   if (rows === null || stats === null) return null
   return (
     <section className={styles.card}>
-      <h3 className={styles.cardTitle}>账户轨迹</h3>
-      <EquityCurveChart rows={rows} />
+      <h3 className={styles.cardTitle}>{t('view.equity')}</h3>
+      <EquityCurveChart rows={rows} t={t} />
       <div className={styles.badgeGrid}>
         <div className={styles.badge}>
           <span className={styles.badgeValue}>{fmtPct(stats.final)}</span>
-          <span className={styles.badgeLabel}>期末累计收益</span>
+          <span className={styles.badgeLabel}>{t('equity.final')}</span>
         </div>
         <div className={styles.badge}>
           <span className={styles.badgeValue}>{fmtPct(stats.mdd)}</span>
-          <span className={styles.badgeLabel}>最大回撤</span>
+          <span className={styles.badgeLabel}>{t('equity.mdd')}</span>
         </div>
         <div className={styles.badge}>
           <span className={styles.badgeValue}>{fmtPct(stats.avgTurnover)}</span>
-          <span className={styles.badgeLabel}>日均换手</span>
+          <span className={styles.badgeLabel}>{t('equity.turnover')}</span>
         </div>
         <div className={styles.badge}>
           <span className={styles.badgeValue}>{fmtPct(stats.bench)}</span>
-          <span className={styles.badgeLabel}>基准累计收益</span>
+          <span className={styles.badgeLabel}>{t('equity.bench')}</span>
         </div>
       </div>
     </section>
@@ -376,7 +382,10 @@ const SERIES_PAD = 10
 const SERIES_COLORS = ['chartValue', 'chartBench', 'chartGrid'] as const
 
 /** Generic multi-series SVG line chart (used by the local-experiment view). */
-export function SeriesChart({ series }: { series: { label: string; dates: string[]; values: number[] }[] }) {
+export function SeriesChart({ series, t }: {
+  series: { label: string; dates: string[]; values: number[] }[]
+  t: TranslateNS<typeof NS>
+}) {
   const { lines, grid } = useMemo(() => {
     const n = series[0]?.values.length ?? 0
     if (n < 2) return { lines: [], grid: [] }
@@ -404,7 +413,7 @@ export function SeriesChart({ series }: { series: { label: string; dates: string
   if (lines.length === 0) return null
   return (
     <div>
-      <svg viewBox={`0 0 ${SERIES_WIDTH} ${SERIES_HEIGHT}`} className={styles.chart} role="img" aria-label="序列曲线">
+      <svg viewBox={`0 0 ${SERIES_WIDTH} ${SERIES_HEIGHT}`} className={styles.chart} role="img" aria-label={t('series.chart.aria')}>
         {grid.map((g, i) => (
           <g key={i}>
             <line x1={SERIES_PAD} x2={SERIES_WIDTH - SERIES_PAD} y1={g.y} y2={g.y} className={styles.chartGrid} />
@@ -427,7 +436,7 @@ export function SeriesChart({ series }: { series: { label: string; dates: string
 }
 
 /** Local-experiment detail view: series charts, run metadata, reports. */
-export function LocalRunView({ detail }: { detail: LocalExperimentDetail }) {
+export function LocalRunView({ detail, t }: { detail: LocalExperimentDetail; t: TranslateNS<typeof NS> }) {
   const [openReports, setOpenReports] = useState<Set<string>>(new Set())
   const toggleReport = (label: string): void => {
     setOpenReports((prev) => {
@@ -442,11 +451,11 @@ export function LocalRunView({ detail }: { detail: LocalExperimentDetail }) {
     <div>
       {detail.run !== undefined && (
         <section className={styles.card}>
-          <h3 className={styles.cardTitle}>运行 {detail.run.id}</h3>
+          <h3 className={styles.cardTitle}>{t('local.run.title', { id: detail.run.id })}</h3>
           <div className={styles.tableWrap}>
             <table className={styles.metricsTable}>
               <thead>
-                <tr><th>键</th><th>值</th></tr>
+                <tr><th>{t('local.run.key')}</th><th>{t('local.run.value')}</th></tr>
               </thead>
               <tbody>
                 {Object.entries(detail.run.meta).filter(([k]) => k !== 'run_id').slice(0, 12).map(([k, v]) => (
@@ -471,24 +480,30 @@ export function LocalRunView({ detail }: { detail: LocalExperimentDetail }) {
       )}
       {detail.series.length > 0 && (
         <section className={styles.card}>
-          <h3 className={styles.cardTitle}>指标序列</h3>
-          <SeriesChart series={detail.series} />
+          <h3 className={styles.cardTitle}>{t('local.series.title')}</h3>
+          <SeriesChart series={detail.series} t={t} />
         </section>
       )}
       {detail.runs.length > 0 && (
         <section className={styles.card}>
-          <h3 className={styles.cardTitle}>运行记录（{detail.runs.length}）</h3>
+          <h3 className={styles.cardTitle}>{t('local.runs.title', { count: detail.runs.length })}</h3>
           <div className={styles.tableWrap}>
             <table className={styles.metricsTable}>
               <thead>
-                <tr><th>运行</th><th>状态</th><th>耗时</th></tr>
+                <tr>
+                  <th>{t('local.runs.id')}</th>
+                  <th>{t('local.runs.status')}</th>
+                  <th>{t('local.runs.duration')}</th>
+                </tr>
               </thead>
               <tbody>
                 {detail.runs.map(r => (
                   <tr key={r.id}>
                     <td>{r.id}</td>
                     <td className={styles.muted}>{r.status ?? '—'}</td>
-                    <td className={styles.muted}>{r.durationSec !== undefined ? `${Math.round(r.durationSec / 60)} 分钟` : '—'}</td>
+                    <td className={styles.muted}>
+                      {r.durationSec !== undefined ? t('local.runs.minutes', { count: Math.round(r.durationSec / 60) }) : '—'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -498,20 +513,22 @@ export function LocalRunView({ detail }: { detail: LocalExperimentDetail }) {
       )}
       {detail.artifacts.length > 0 && (
         <section className={styles.card}>
-          <h3 className={styles.cardTitle}>产物（{detail.artifacts.length}）</h3>
+          <h3 className={styles.cardTitle}>{t('local.artifacts.title', { count: detail.artifacts.length })}</h3>
           <div className={styles.chipRow}>
             {detail.artifacts.slice(0, 40).map(a => (
               <span key={a.path} className={styles.modelChip}>
-                {a.label}{a.size !== undefined ? ` · ${(a.size / 1024).toFixed(0)}KB` : ''}
+                {a.label}{a.size !== undefined ? t('local.artifacts.size', { kb: (a.size / 1024).toFixed(0) }) : ''}
               </span>
             ))}
-            {detail.artifacts.length > 40 && <span className={styles.muted}>… 其余 {detail.artifacts.length - 40} 项</span>}
+            {detail.artifacts.length > 40 && (
+              <span className={styles.muted}>{t('local.artifacts.rest', { count: detail.artifacts.length - 40 })}</span>
+            )}
           </div>
         </section>
       )}
       {detail.reports.length > 0 && (
         <section className={styles.card}>
-          <h3 className={styles.cardTitle}>报告与日志</h3>
+          <h3 className={styles.cardTitle}>{t('local.reports.title')}</h3>
           {detail.reports.map(r => (
             <details key={r.label} open={openReports.has(r.label)}>
               <summary onClick={(e) => { e.preventDefault(); toggleReport(r.label) }}>{r.label}</summary>

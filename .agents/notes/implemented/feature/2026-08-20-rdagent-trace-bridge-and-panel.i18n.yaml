@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-20-rdagent-trace-bridge-and-panel.md
+2026-08-20-rdagent-trace-bridge-and-panel.md: 0aa41494770318333ae2df313ac8853819a0211e
+2026-08-20-rdagent-trace-bridge-and-panel.zh.md: 010243234a90b040d5a6c4f3d2cdb9c127b0213b

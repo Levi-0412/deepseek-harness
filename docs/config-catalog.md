@@ -1764,10 +1764,12 @@ export interface Config {
   pythonBin: string
   /** Override for the parse script; defaults to the packaged scripts/parse_trace.py. */
   parseScript?: string
+  /** Root directory holding local quant-experiment trees (experiments/<name>/). */
+  experimentRoot?: string
 }
 ```
 
-Source: [`packages/rdagent/rdagent-bridge/src/index.ts:35`](../packages/rdagent/rdagent-bridge/src/index.ts)
+Source: [`packages/rdagent/rdagent-bridge/src/index.ts:37`](../packages/rdagent/rdagent-bridge/src/index.ts)
 
 <a id="deepseek-aidsh-repeat-tool-reminder"></a>
 

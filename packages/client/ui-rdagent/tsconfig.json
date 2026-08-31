@@ -15,16 +15,13 @@
       "path": "../locale"
     },
     {
-      "path": "../runtime"
+      "path": "../ui-renderer"
     },
     {
       "path": "../ui-sidebar"
     },
     {
       "path": "../ui-slots"
-    },
-    {
-      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }
